@@ -515,6 +515,28 @@ class ApiManager {
       return ApiError('Something went wrong: $e');
     }
   }
+
+  Future<ApiResult<bool>> signOut() async {
+    try {
+      final body = jsonEncode({'ARMSessionId': StorageService.sessionId ?? ''});
+
+      final url = await AppConst.getFullARMUrl(ApiEndpoints.API_SIGNOUT);
+
+      await _postToServer(url, body: body, isBearer: true);
+
+      return ApiSuccess(true);
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } on FormatException {
+      return ApiError('Invalid response from server.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
 }
 
 class _ApiException implements Exception {

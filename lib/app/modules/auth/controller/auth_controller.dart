@@ -9,6 +9,7 @@ import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/services/api_endpoints.dart';
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/data/services/storage_service.dart';
+import 'package:axpert/app/db/project_database.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -51,7 +52,7 @@ class AuthController extends GetxController {
   bool isDuplicate_session = false;
   bool isAxpertConnectEstablished = false;
   final bool _isAuthFromBiometric = false;
-
+  final projects = <ProjectModel>[].obs;
   TextEditingController oPassCtrl = TextEditingController();
   TextEditingController nPassCtrl = TextEditingController();
   TextEditingController cnPassCtrl = TextEditingController();
@@ -66,12 +67,48 @@ class AuthController extends GetxController {
     await refreshCurrentProject();
   }
 
+  void projectChanged(int p1) async {
+    await StorageService.saveLastSelectedProject(p1);
+    onLoad();
+  }
+
+  @override
+  onInit() {
+    super.onInit();
+    fetchProjects();
+  }
+
+  Future<void> fetchProjects() async {
+    // isLoadingProjects.value = true;
+    projects.clear();
+    final result = await ProjectDatabase.instance.getAll();
+    switch (result) {
+      case DbSuccess(:final data):
+        projects.assignAll(data);
+      case DbError(:final message):
+      // _showErrorSnackbar(message);
+    }
+    // isLoadingProjects.value = false;
+  }
+
   Future<void> refreshCurrentProject() async {
     selectedProject.value = await StorageService.getLastSelectedProject();
     currentProjectName.value = selectedProject.value?.schemaName ?? '';
     selectedColor.value = AppColors.colorFromHex(
       selectedProject.value?.color ?? '',
     );
+
+    var userName = StorageService.getRememberedUser(currentProjectName.value);
+    if (userName != null) {
+      rememberMe.value = true;
+      userNameController.text = userName;
+      userPasswordController.text =
+          StorageService.getRememberedPassword(currentProjectName.value) ?? '';
+    } else {
+      rememberMe.value = false;
+      userNameController.text = '';
+      userPasswordController.text = '';
+    }
   }
 
   Future<String> getVersionName() async {
@@ -774,6 +811,150 @@ class AuthController extends GetxController {
       snackPosition: SnackPosition.BOTTOM,
       colorText: Colors.white,
       backgroundColor: Colors.red,
+    );
+  }
+
+  Future<void> showExitConfirmationSheet() {
+    return Get.bottomSheet(
+      Container(
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.shadowColor,
+              offset: const Offset(0, -4),
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 12,
+          bottom: MediaQuery.of(Get.context!).padding.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Drag handle ─────────────────────────────────────
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: AppColors.grey300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // ── Icon ────────────────────────────────────────────
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.lightAccent.withOpacity(0.35),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.logout_rounded,
+                color: AppColors.lightPrimary,
+                size: 24,
+              ),
+            ),
+
+            16.verticalSpace,
+
+            // ── Title ───────────────────────────────────────────
+            Text(
+              'Exit App?',
+              style: GoogleFonts.poppins(
+                color: AppColors.textOnLight,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            8.verticalSpace,
+
+            Text(
+              'Are you sure you want to close the app?',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                color: AppColors.grey600,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+
+            24.verticalSpace,
+
+            // ── Stay + Exit row ─────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 55.h,
+                    child: OutlinedButton(
+                      onPressed: Get.back,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textOnLight,
+                        side: const BorderSide(
+                          color: AppColors.grey300,
+                          width: 1,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Stay',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                10.horizontalSpace,
+
+                Expanded(
+                  child: SizedBox(
+                    height: 55.h,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Get.back(); // close sheet
+                        SystemNavigator.pop(); // kill app
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accentRed,
+                        foregroundColor: AppColors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Exit',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.grey900.withOpacity(0.4),
     );
   }
 }

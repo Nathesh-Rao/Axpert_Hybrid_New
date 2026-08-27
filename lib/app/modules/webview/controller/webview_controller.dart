@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:get/get.dart';
@@ -177,6 +179,7 @@ class WebViewController extends GetxController {
 
   final RxBool isCalendarPage = false.obs;
 
+  final RxBool isSessionExpired = false.obs;
   // ── Long swipe state ────────────────────────────────────────────
 
   bool _handled = false;
@@ -229,6 +232,7 @@ class WebViewController extends GetxController {
     // }
 
     currentUrl.value = url;
+    isSessionExpired.value = false;
     print("WebView URL loaded: $url");
     if (!await connectTOAxpert()) return;
     await _webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
@@ -422,10 +426,16 @@ class WebViewController extends GetxController {
   // BACK BUTTON
   // ────────────────────────────────────────────────────────────────
 
+  // ────────────────────────────────────────────────────────────────
+  // invalid session
+  // ────────────────────────────────────────────────────────────────
+
   Future<bool> performBackButtonClick() async {
+    var tag = "performBackButtonClick";
     final controller = _webViewController;
 
     if (controller == null) {
+      log("_webViewController is null", name: tag);
       return true;
     }
 
@@ -451,6 +461,8 @@ class WebViewController extends GetxController {
         """,
       );
 
+      log("evaluateJavascript result : $result", name: tag);
+
       final handledInWeb =
           result == true || result?.toString().toLowerCase() == 'true';
 
@@ -458,12 +470,24 @@ class WebViewController extends GetxController {
         closeScreen();
         return true;
       }
-
+      _checkForMainUrl();
       return false;
-    } catch (_) {
+    } catch (e) {
+      log("catch error : $e", name: tag);
+
       closeScreen();
       return true;
     }
+  }
+
+  Future<bool> _checkForMainUrl() async {
+    log("currentUrl.value : ${currentUrl.value}", name: "_checkForMainUrl");
+    log(
+      "_webViewController : ${await _webViewController?.getUrl()}",
+      name: "_checkForMainUrl",
+    );
+
+    return false;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -494,6 +518,9 @@ class WebViewController extends GetxController {
   // ────────────────────────────────────────────────────────────────
   // URL HANDLING
   // ────────────────────────────────────────────────────────────────
+  void showSessionExpiredDialog() {
+    isSessionExpired.value = true;
+  }
 
   Future<NavigationActionPolicy> handleUrlLoading(
     InAppWebViewController controller,
@@ -522,6 +549,8 @@ class WebViewController extends GetxController {
       //
       // Ignored intentionally because LandingPageController
       // is not part of the new WebView architecture.
+
+      showSessionExpiredDialog();
     }
 
     // ── File download ─────────────────────────────────────────────
@@ -556,8 +585,11 @@ class WebViewController extends GetxController {
       // widget.webViewController.closeWebView();
       //
       // We only keep the WebView-specific behavior.
-      closeScreen();
+      // closeScreen();
+      // controller
     }
+
+    if (consoleMessage.toString().contains('Next Link')) {}
   }
 
   // ────────────────────────────────────────────────────────────────

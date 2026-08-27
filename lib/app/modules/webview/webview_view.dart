@@ -2,10 +2,12 @@ import 'dart:developer';
 
 import 'package:animate_do/animate_do.dart';
 import 'package:axpert/app/core/common.dart';
+import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:axpert/app/core/routes/app_routes.dart';
+import 'package:axpert/app/modules/webview/widgets/session_expired_widget.dart';
 import 'package:axpert/app/widgets/widgets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +34,10 @@ class WebviewView extends GetView<WebViewController> {
       canPop: false, // always intercept back
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await _handleBackPress(context);
+
+        if (controller.isSessionExpired.value) return;
+        // await _handleBackPress(context);
+        await controller.performBackButtonClick();
       },
       child: AppScaffold(
         // backgroundColor: AppColors.white,
@@ -302,6 +307,18 @@ class WebviewView extends GetView<WebViewController> {
                               : const SizedBox.shrink(),
                         ),
                       ),
+                    ),
+
+                    Obx(
+                      () => controller.isSessionExpired.value
+                          ? SessionExpiredWidget(
+                              onLogin: () async {
+                                controller.isLoading.value = true;
+                                await ApiManager.instance.signOut();
+                                Get.back();
+                              },
+                            )
+                          : SizedBox.shrink(),
                     ),
                   ],
                 ),

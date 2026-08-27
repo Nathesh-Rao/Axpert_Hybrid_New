@@ -144,6 +144,16 @@ class StorageService {
     await _prefs.setString(_keyRememberedGroups, jsonEncode(groups));
   }
 
+  static String? getRememberedUser(String projectName) {
+    final users = _getMap(_keyRememberedUsers);
+    return users[projectName] as String?;
+  }
+
+  static String? getRememberedPassword(String projectName) {
+    final passes = _getMap(_keyRememberedPasswords);
+    return passes[projectName] as String?;
+  }
+
   static Future<void> forgetCredentialsForProject(String projectName) async {
     final users = _getMap(_keyRememberedUsers);
     final passes = _getMap(_keyRememberedPasswords);
