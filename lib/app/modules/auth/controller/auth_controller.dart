@@ -10,6 +10,7 @@ import 'package:axpert/app/data/services/api_endpoints.dart';
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/data/services/storage_service.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
+import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -368,19 +369,20 @@ class AuthController extends GetxController {
     // Get.offAllNamed(Routes.LandingPage);
     //
     //burnur code for navigating to ess portal - amrith--->
-    final result = await ApiManager.instance.connectToAxpert();
 
-    if (result is ApiSuccess<bool>) {
-      isAxpertConnectEstablished = result.data;
-    } else if (result is ApiError<bool>) {
-      error(result.message);
-    }
     var sessionid = StorageService.sessionId ?? '';
+
+    if (sessionid.isEmpty) return;
     var url = await AppConst.getFullWebUrl(
       "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
     );
 
-    WebViewController.open(url: url);
+    var webviewController = Get.put(WebViewController());
+
+    Get.to(WebviewView());
+
+    webviewController.openWebView(url: url);
+    // WebViewController.open(url: url);
   }
 
   Future<void> _callApiForMobileNotification() async {

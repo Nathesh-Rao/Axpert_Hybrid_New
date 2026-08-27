@@ -1,3 +1,4 @@
+import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:get/get.dart';
 
@@ -204,6 +205,43 @@ class WebViewController extends GetxController {
   // OPEN
   // ────────────────────────────────────────────────────────────────
 
+  Future<void> openWebView({
+    required String url,
+    bool switchPage = true,
+  }) async {
+    // isProgressBarActive.value = true;
+    // LandingPageController landingPageController = Get.find();
+    // if (!landingPageController.isAxpertConnectEstablished) {
+    //   await landingPageController.callApiForConnectToAxpert();
+    // }
+
+    // if (landingPageController.isAxpertConnectEstablished) {
+
+    //       .then((_) {
+    //     isProgressBarActive.value = false;
+    //   });
+    //   if (switchPage) currentIndex.value = 1;
+    // }
+
+    currentUrl.value = url;
+    print("WebView URL loaded: $url");
+    if (!await connectTOAxpert()) return;
+    await _webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+  }
+
+  Future<bool> connectTOAxpert() async {
+    final result = await ApiManager.instance.connectToAxpert();
+
+    if (result is ApiSuccess<bool>) {
+      // isAxpertConnectEstablished = result.data;
+      return true;
+    } else if (result is ApiError<bool>) {
+      return false;
+    }
+
+    return false;
+  }
+
   static void open({required String url, String? title}) {
     // Auto-upgrade http → https
 
@@ -231,6 +269,8 @@ class WebViewController extends GetxController {
 
       duration: const Duration(milliseconds: 350),
     );
+
+
   }
 
   static void offAllOpen({required String url, String? title}) {

@@ -26,6 +26,8 @@ class WebviewView extends GetView<WebViewController> {
 
   @override
   Widget build(BuildContext context) {
+    print("CurrentURL => ${controller.currentUrl.value}");
+
     return PopScope(
       canPop: false, // always intercept back
       onPopInvokedWithResult: (didPop, _) async {
@@ -289,12 +291,14 @@ class WebviewView extends GetView<WebViewController> {
                     ),
 
                     Obx(
-                      () => FadeIn(
-                        child: controller.isLoading.value
-                            ? Center(
-                                child: LoadingLottieWidget(showColor: true),
-                              )
-                            : const SizedBox.shrink(),
+                      () => Align(
+                        alignment: Alignment.bottomCenter,
+
+                        child: FadeIn(
+                          child: controller.isLoading.value
+                              ? LoadingLottieWidget(showColor: true)
+                              : const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ],
