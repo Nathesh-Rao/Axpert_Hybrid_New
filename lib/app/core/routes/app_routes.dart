@@ -5,4 +5,5 @@ abstract class Routes {
   static const PROJECT_CONFIG = '/project_config';
   static const LOGIN = '/login';
   static const OTP = '/otp';
+  static const WEBVIEW = '/webview';
 }

@@ -378,9 +378,8 @@ class AuthController extends GetxController {
     );
 
     var webviewController = Get.put(WebViewController());
-
+    webviewController.currentUrl.value = '';
     Get.to(WebviewView());
-
     webviewController.openWebView(url: url);
     // WebViewController.open(url: url);
   }

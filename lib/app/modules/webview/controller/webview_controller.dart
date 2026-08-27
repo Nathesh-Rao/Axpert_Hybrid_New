@@ -186,6 +186,11 @@ class WebViewController extends GetxController {
   Timer? _longPressTimer;
 
   // ── File extensions ─────────────────────────────────────────────
+  @override
+  void onInit() {
+    isAxpertConnectEstablished = true;
+    super.onInit();
+  }
 
   final List<String> imageExtensions = [
     'jpg',
@@ -230,7 +235,7 @@ class WebViewController extends GetxController {
   }
 
   Future<bool> connectTOAxpert() async {
-    if (isAxpertConnectEstablished) return true;
+    // if (isAxpertConnectEstablished) return true;
     final result = await ApiManager.instance.connectToAxpert();
 
     if (result is ApiSuccess<bool>) {

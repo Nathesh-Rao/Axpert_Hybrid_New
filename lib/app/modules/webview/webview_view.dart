@@ -295,7 +295,9 @@ class WebviewView extends GetView<WebViewController> {
                         alignment: Alignment.bottomCenter,
 
                         child: FadeIn(
-                          child: controller.isLoading.value
+                          child:
+                              (controller.isLoading.value ||
+                                  controller.currentUrl.value.isEmpty)
                               ? LoadingLottieWidget(showColor: true)
                               : const SizedBox.shrink(),
                         ),

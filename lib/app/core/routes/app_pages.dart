@@ -2,6 +2,8 @@ import 'package:axpert/app/modules/auth/bindings/auth_bindings.dart';
 import 'package:axpert/app/modules/auth/views/login_view.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
+import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
+import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:get/get.dart';
 
 import '../../modules/splash/splash_binding.dart';
@@ -38,6 +40,14 @@ class AppPages {
       name: Routes.LOGIN,
       page: () => const LoginView(),
       binding: AuthBindings(),
+      transition: Transition.fadeIn,
+    ),
+    GetPage(
+      name: Routes.WEBVIEW,
+      page: () => WebviewView(),
+      // binding: BindingsBuilder(() {
+
+      // }),
       transition: Transition.fadeIn,
     ),
     // GetPage(
