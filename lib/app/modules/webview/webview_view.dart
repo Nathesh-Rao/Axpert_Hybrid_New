@@ -52,19 +52,19 @@ class WebviewView extends GetView<WebViewController> {
               // ),
 
               // ── PROGRESS BAR ─────────────────────────────────────────
-              Obx(
-                () => AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: controller.isLoading.value ? 2.0 : 0.0,
-                  child: LinearProgressIndicator(
-                    value: controller.loadingProgress.value / 100,
-                    backgroundColor: Colors.transparent,
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      AppColors.lightPrimary,
-                    ),
-                  ),
-                ),
-              ),
+              // Obx(
+              //   () => AnimatedContainer(
+              //     duration: const Duration(milliseconds: 200),
+              //     height: controller.isLoading.value ? 2.0 : 0.0,
+              //     child: LinearProgressIndicator(
+              //       value: controller.loadingProgress.value / 100,
+              //       backgroundColor: Colors.transparent,
+              //       valueColor: const AlwaysStoppedAnimation<Color>(
+              //         AppColors.lightPrimary,
+              //       ),
+              //     ),
+              //   ),
+              // ),
 
               // ── WEBVIEW ──────────────────────────────────────────────
               // Expanded fills whatever space top + bottom leave behind.

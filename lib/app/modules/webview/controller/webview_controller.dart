@@ -158,7 +158,7 @@ class WebViewController extends GetxController {
   final RxBool canGoForward = false.obs;
 
   // ── Chrome visibility ───────────────────────────────────────────
-
+  bool isAxpertConnectEstablished = false;
   final RxBool isChromeVisible = true.obs;
 
   int _lastScrollY = 0;
@@ -230,10 +230,11 @@ class WebViewController extends GetxController {
   }
 
   Future<bool> connectTOAxpert() async {
+    if (isAxpertConnectEstablished) return true;
     final result = await ApiManager.instance.connectToAxpert();
 
     if (result is ApiSuccess<bool>) {
-      // isAxpertConnectEstablished = result.data;
+      isAxpertConnectEstablished = result.data;
       return true;
     } else if (result is ApiError<bool>) {
       return false;
@@ -269,8 +270,6 @@ class WebViewController extends GetxController {
 
       duration: const Duration(milliseconds: 350),
     );
-
-
   }
 
   static void offAllOpen({required String url, String? title}) {
