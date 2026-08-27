@@ -25,46 +25,71 @@ class ProjectHeroTile extends GetView<ProjectController> {
     //       width: double.infinity,
     //       constraints: _getConstraints(state),
     //       margin: EdgeInsets.all(25.w),
+    //       // 1. Shadow opacity reduced so it doesn't muddy the background image
     //       decoration: BoxDecoration(
-    //         color: Colors.white,
-    //         borderRadius: BorderRadius.circular(12),
-    //         border: Border.all(
-    //           color: AppColors.lightPrimary.withValues(alpha: 0.25),
-    //           width: 1,
-    //         ),
+    //         borderRadius: BorderRadius.circular(16),
     //         boxShadow: [
     //           BoxShadow(
-    //             color: AppColors.lightAccent,
-    //             offset: const Offset(2, 2),
-    //             blurRadius: 8,
-    //             spreadRadius: 8,
+    //             color: Colors.black.withValues(
+    //               alpha: 0.04,
+    //             ), // Lowered from 0.08
+    //             offset: const Offset(0, 8),
+    //             blurRadius: 24,
+    //             spreadRadius: -4,
     //           ),
     //         ],
     //       ),
-    //       child: ClipRect(
-    //         child: SingleChildScrollView(
-    //           physics: const NeverScrollableScrollPhysics(),
-    //           child: AnimatedSwitcher(
-    //             duration: _duration,
-    //             switchInCurve: Curves.easeOut,
-    //             switchOutCurve: Curves.easeIn,
-    //             layoutBuilder: (currentChild, previousChildren) => Stack(
-    //               alignment: Alignment.topCenter,
-    //               children: [...previousChildren, ?currentChild],
-    //             ),
-    //             transitionBuilder: (child, animation) => FadeTransition(
-    //               opacity: animation,
-    //               child: SlideTransition(
-    //                 position: Tween<Offset>(
-    //                   begin: const Offset(0, 0.04),
-    //                   end: Offset.zero,
-    //                 ).animate(animation),
-    //                 child: child,
+    //       child: ClipRRect(
+    //         borderRadius: BorderRadius.circular(16),
+    //         child: BackdropFilter(
+    //           // 2. Lowered blur from 16 to 10 so the image shapes are actually visible
+    //           filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+    //           child: Container(
+    //             decoration: BoxDecoration(
+    //               // 3. Made the white gradient MUCH more transparent
+    //               gradient: LinearGradient(
+    //                 begin: Alignment.topLeft,
+    //                 end: Alignment.bottomRight,
+    //                 colors: [
+    //                   Colors.white.withValues(alpha: 0.25), // Dropped from 0.6
+    //                   Colors.white.withValues(alpha: 0.05), // Dropped from 0.2
+    //                 ],
     //               ),
+    //               border: Border.all(
+    //                 color: Colors.white.withValues(
+    //                   alpha: 0.6,
+    //                 ), // Slightly softer rim
+    //                 width: 1.2,
+    //               ),
+    //               borderRadius: BorderRadius.circular(16),
     //             ),
-    //             child: KeyedSubtree(
-    //               key: ValueKey(state),
-    //               child: _getWidgetForState(state),
+    //             child: ClipRect(
+    //               child: SingleChildScrollView(
+    //                 physics: const NeverScrollableScrollPhysics(),
+    //                 child: AnimatedSwitcher(
+    //                   duration: _duration,
+    //                   switchInCurve: Curves.easeOut,
+    //                   switchOutCurve: Curves.easeIn,
+    //                   layoutBuilder: (currentChild, previousChildren) => Stack(
+    //                     alignment: Alignment.topCenter,
+    //                     children: [...previousChildren, ?currentChild],
+    //                   ),
+    //                   transitionBuilder: (child, animation) => FadeTransition(
+    //                     opacity: animation,
+    //                     child: SlideTransition(
+    //                       position: Tween<Offset>(
+    //                         begin: const Offset(0, 0.04),
+    //                         end: Offset.zero,
+    //                       ).animate(animation),
+    //                       child: child,
+    //                     ),
+    //                   ),
+    //                   child: KeyedSubtree(
+    //                     key: ValueKey(state),
+    //                     child: _getWidgetForState(state),
+    //                   ),
+    //                 ),
+    //               ),
     //             ),
     //           ),
     //         ),

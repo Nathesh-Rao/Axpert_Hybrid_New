@@ -38,16 +38,16 @@ class WebviewView extends GetView<WebViewController> {
           child: Column(
             children: [
               // ── TOP BAR ─────────────────────────────────────────────
-              Obx(
-                () => AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  height: controller.isChromeVisible.value
-                      ? _kTopBarHeight
-                      : 0.0,
-                  child: ClipRect(child: _TopBar(controller: controller)),
-                ),
-              ),
+              // Obx(
+              //   () => AnimatedContainer(
+              //     duration: const Duration(milliseconds: 300),
+              //     curve: Curves.easeInOut,
+              //     height: controller.isChromeVisible.value
+              //         ? _kTopBarHeight
+              //         : 0.0,
+              //     child: ClipRect(child: _TopBar(controller: controller)),
+              //   ),
+              // ),
 
               // ── PROGRESS BAR ─────────────────────────────────────────
               Obx(
@@ -79,55 +79,215 @@ class WebviewView extends GetView<WebViewController> {
                     //     ),
                     //   ),
                     // ),
+                    // InAppWebView(
+                    //   initialUrlRequest: URLRequest(
+                    //     url: WebUri(controller.currentUrl.value),
+                    //   ),
+                    //   initialSettings: InAppWebViewSettings(
+                    //     javaScriptEnabled: true,
+                    //     domStorageEnabled: true,
+                    //     databaseEnabled: true,
+                    //     mediaPlaybackRequiresUserGesture: false,
+                    //     allowsInlineMediaPlayback: true,
+                    //     useShouldOverrideUrlLoading: true,
+                    //     transparentBackground: true,
+                    //     mixedContentMode:
+                    //         MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    //   ),
+                    //   onWebViewCreated: (webCtrl) {
+                    //     controller.attachWebViewController(webCtrl);
+                    //   },
+                    //   onReceivedServerTrustAuthRequest:
+                    //       (webCtrl, challenge) async {
+                    //         return ServerTrustAuthResponse(
+                    //           action: ServerTrustAuthResponseAction.PROCEED,
+                    //         );
+                    //       },
+                    //   onLoadStart: (webCtrl, url) {
+                    //     controller.onPageStarted(url?.toString() ?? '');
+                    //   },
+                    //   onProgressChanged: (webCtrl, progress) {
+                    //     controller.onProgressChanged(progress);
+                    //   },
+                    //   onLoadStop: (webCtrl, url) async {
+                    //     controller.onPageFinished(url?.toString() ?? '');
+                    //     final canBack = await webCtrl.canGoBack();
+                    //     final canForward = await webCtrl.canGoForward();
+                    //     controller.updateNavState(
+                    //       canBack: canBack,
+                    //       canForward: canForward,
+                    //     );
+                    //   },
+                    //   onTitleChanged: (webCtrl, title) {
+                    //     controller.onTitleChanged(title ?? '');
+                    //   },
+                    //   onReceivedError: (webCtrl, request, error) {
+                    //     controller.isLoading.value = false;
+                    //   },
+                    //   onScrollChanged: (webCtrl, x, y) {
+                    //     controller.onScrollChanged(x, y);
+                    //   },
+                    // ),
                     InAppWebView(
                       initialUrlRequest: URLRequest(
                         url: WebUri(controller.currentUrl.value),
                       ),
+
                       initialSettings: InAppWebViewSettings(
-                        javaScriptEnabled: true,
-                        domStorageEnabled: true,
-                        databaseEnabled: true,
-                        mediaPlaybackRequiresUserGesture: false,
-                        allowsInlineMediaPlayback: true,
-                        useShouldOverrideUrlLoading: true,
+                        // ── Old settings ─────────────────────────────────────
                         transparentBackground: true,
+
+                        javaScriptEnabled: true,
+
+                        javaScriptCanOpenWindowsAutomatically: true,
+
+                        domStorageEnabled: true,
+
+                        databaseEnabled: true,
+
+                        useShouldOverrideUrlLoading: true,
+
+                        supportMultipleWindows: true,
+
+                        geolocationEnabled: true,
+
+                        clearCache: false,
+
+                        mediaPlaybackRequiresUserGesture: false,
+
+                        allowsInlineMediaPlayback: true,
+
                         mixedContentMode:
                             MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+
+                        // Keep this only if you actually need it.
+                        useHybridComposition: false,
+
+                        hardwareAcceleration: false,
                       ),
+
+                      // ────────────────────────────────────────────────────────
+                      // CREATED
+                      // ────────────────────────────────────────────────────────
                       onWebViewCreated: (webCtrl) {
                         controller.attachWebViewController(webCtrl);
+
+                        // Old InApplicationWebViewer cleared cookies
+                        // during initialization.
+                        controller.clearCookies();
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // SSL
+                      // ────────────────────────────────────────────────────────
                       onReceivedServerTrustAuthRequest:
                           (webCtrl, challenge) async {
                             return ServerTrustAuthResponse(
                               action: ServerTrustAuthResponseAction.PROCEED,
                             );
                           },
+
+                      // ────────────────────────────────────────────────────────
+                      // LOAD START
+                      // ────────────────────────────────────────────────────────
                       onLoadStart: (webCtrl, url) {
                         controller.onPageStarted(url?.toString() ?? '');
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // PROGRESS
+                      // ────────────────────────────────────────────────────────
                       onProgressChanged: (webCtrl, progress) {
                         controller.onProgressChanged(progress);
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // LOAD STOP
+                      // ────────────────────────────────────────────────────────
                       onLoadStop: (webCtrl, url) async {
-                        controller.onPageFinished(url?.toString() ?? '');
-                        final canBack = await webCtrl.canGoBack();
-                        final canForward = await webCtrl.canGoForward();
-                        controller.updateNavState(
-                          canBack: canBack,
-                          canForward: canForward,
-                        );
+                        await controller.onPageFinished(url?.toString() ?? '');
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // TITLE
+                      // ────────────────────────────────────────────────────────
                       onTitleChanged: (webCtrl, title) {
                         controller.onTitleChanged(title ?? '');
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // ERROR
+                      // ────────────────────────────────────────────────────────
                       onReceivedError: (webCtrl, request, error) {
                         controller.isLoading.value = false;
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // SCROLL
+                      // ────────────────────────────────────────────────────────
                       onScrollChanged: (webCtrl, x, y) {
                         controller.onScrollChanged(x, y);
                       },
+
+                      // ────────────────────────────────────────────────────────
+                      // LOCATION
+                      // ────────────────────────────────────────────────────────
+                      onGeolocationPermissionsShowPrompt:
+                          (webCtrl, origin) async {
+                            return controller.handleGeolocationPermission(
+                              webCtrl,
+                              origin,
+                            );
+                          },
+
+                      // ────────────────────────────────────────────────────────
+                      // DOWNLOAD
+                      // ────────────────────────────────────────────────────────
+                      onDownloadStartRequest:
+                          (webCtrl, downloadStartRequest) async {
+                            final url = downloadStartRequest.url.toString();
+
+                            print('Download requested: $url');
+
+                            await controller.download(url);
+                          },
+
+                      // ────────────────────────────────────────────────────────
+                      // CONSOLE
+                      // ────────────────────────────────────────────────────────
+                      onConsoleMessage: (webCtrl, consoleMessage) {
+                        controller.onConsoleMessage(consoleMessage);
+                      },
+
+                      // ────────────────────────────────────────────────────────
+                      // URL OVERRIDE
+                      // ────────────────────────────────────────────────────────
+                      shouldOverrideUrlLoading:
+                          (webCtrl, navigationAction) async {
+                            return controller.handleUrlLoading(
+                              webCtrl,
+                              navigationAction,
+                            );
+                          },
+
+                      // ────────────────────────────────────────────────────────
+                      // NEW WINDOW
+                      // ────────────────────────────────────────────────────────
+                      onCreateWindow: (webCtrl, createWindowRequest) async {
+                        final windowId = createWindowRequest.windowId;
+
+                        print('New WebView window: $windowId');
+
+                        Get.to(
+                          () => NewWindowPage(windowId: windowId),
+                          transition: Transition.cupertino,
+                          duration: const Duration(milliseconds: 500),
+                        );
+
+                        return true;
+                      },
                     ),
+
                     Obx(
                       () => FadeIn(
                         child: controller.isLoading.value
@@ -142,16 +302,16 @@ class WebviewView extends GetView<WebViewController> {
               ),
 
               // ── BOTTOM BAR ───────────────────────────────────────────
-              Obx(
-                () => AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  height: controller.isChromeVisible.value
-                      ? _kBottomBarHeight
-                      : 0.0,
-                  child: ClipRect(child: _BottomNavBar(controller: controller)),
-                ),
-              ),
+              // Obx(
+              //   () => AnimatedContainer(
+              //     duration: const Duration(milliseconds: 300),
+              //     curve: Curves.easeInOut,
+              //     height: controller.isChromeVisible.value
+              //         ? _kBottomBarHeight
+              //         : 0.0,
+              //     child: ClipRect(child: _BottomNavBar(controller: controller)),
+              //   ),
+              // ),
             ],
           ),
         ),
@@ -520,6 +680,58 @@ class _NavButton extends StatelessWidget {
             border: Border.all(color: AppColors.grey200, width: 0.8),
           ),
           child: Icon(icon, color: activeColor, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class NewWindowPage extends StatefulWidget {
+  final int windowId;
+
+  const NewWindowPage({super.key, required this.windowId});
+
+  @override
+  State<NewWindowPage> createState() => _NewWindowPageState();
+}
+
+class _NewWindowPageState extends State<NewWindowPage> {
+  InAppWebViewController? controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: InAppWebView(
+          windowId: widget.windowId,
+
+          initialSettings: InAppWebViewSettings(
+            javaScriptEnabled: true,
+            domStorageEnabled: true,
+            databaseEnabled: true,
+            javaScriptCanOpenWindowsAutomatically: true,
+            useShouldOverrideUrlLoading: true,
+            supportMultipleWindows: true,
+            transparentBackground: true,
+          ),
+
+          onWebViewCreated: (webCtrl) {
+            controller = webCtrl;
+          },
+
+          onConsoleMessage: (controller, consoleMessage) {
+            print(
+              'New window console: '
+              '$consoleMessage',
+            );
+          },
+
+          onDownloadStartRequest: (controller, downloadStartRequest) async {
+            final url = downloadStartRequest.url.toString();
+
+            // Use your new download implementation.
+            print('New window download: $url');
+          },
         ),
       ),
     );

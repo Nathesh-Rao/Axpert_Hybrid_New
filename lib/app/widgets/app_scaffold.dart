@@ -21,6 +21,7 @@ class AppScaffold extends StatelessWidget {
   final bool safeArea;
 
   final EdgeInsetsGeometry padding;
+  final String? bgIMage;
 
   const AppScaffold({
     super.key,
@@ -38,6 +39,7 @@ class AppScaffold extends StatelessWidget {
     this.extendBodyBehindAppBar = true,
     this.safeArea = false,
     this.padding = EdgeInsetsGeometry.zero,
+    this.bgIMage,
   });
 
   @override
@@ -61,7 +63,15 @@ class AppScaffold extends StatelessWidget {
             : Brightness.dark,
       ),
       child: Container(
-        decoration: BoxDecoration(gradient: context.colors.scaffoldGradient),
+        decoration: BoxDecoration(
+          gradient: bgIMage == null ? context.colors.scaffoldGradient : null,
+          image: bgIMage != null
+              ? DecorationImage(
+                  image: AssetImage(bgIMage ?? ''),
+                  fit: BoxFit.fill,
+                )
+              : null,
+        ),
         child: Scaffold(
           backgroundColor: Colors.transparent,
 

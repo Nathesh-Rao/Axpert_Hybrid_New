@@ -33,7 +33,8 @@ class ProjectView extends GetView<ProjectController> {
         }
       },
       child: AppScaffold(
-        resizeToAvoidBottomInset: false,
+        // resizeToAvoidBottomInset: false,
+        // bgIMage: "assets/images/login_bg2.png",
         body: SafeArea(
           child: Column(
             children: [

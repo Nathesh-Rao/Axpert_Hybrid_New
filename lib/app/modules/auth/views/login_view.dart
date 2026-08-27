@@ -18,6 +18,7 @@ class LoginView extends GetView<AuthController> {
       controller.onLoad();
     });
     return AppScaffold(
+      // bgIMage: "assets/images/login_bg2.png",
       body: SafeArea(
         child: Obx(
           () => Skeletonizer(
@@ -301,18 +302,21 @@ class LoginView extends GetView<AuthController> {
                                 ),
                               ),
                               Obx(
-                                () => WidgetLoginButton(
-                                  icon: Icon(Icons.security),
-                                  label: _getLoginButtonLabel(),
-                                  visible:
-                                      controller.authType.value ==
-                                          AuthType.both ||
-                                      controller.authType.value ==
-                                          AuthType.passwordOnly,
-                                  onPressed: () {
-                                    // controller.callSignInAPI();
-                                  },
-                                  color: controller.selectedColor.value,
+                                () => Skeletonizer(
+                                  enabled: controller.isSigninApiCalling.value,
+                                  child: WidgetLoginButton(
+                                    icon: Icon(Icons.security),
+                                    label: _getLoginButtonLabel(),
+                                    visible:
+                                        controller.authType.value ==
+                                            AuthType.both ||
+                                        controller.authType.value ==
+                                            AuthType.passwordOnly,
+                                    onPressed: () {
+                                      controller.callSignInAPI();
+                                    },
+                                    color: controller.selectedColor.value,
+                                  ),
                                 ),
                               ),
                               SizedBox(

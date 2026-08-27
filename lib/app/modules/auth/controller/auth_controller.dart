@@ -9,6 +9,7 @@ import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/services/api_endpoints.dart';
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/data/services/storage_service.dart';
+import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -18,6 +19,7 @@ import 'package:crypto/crypto.dart';
 class AuthController extends GetxController {
   Rxn<ProjectModel> selectedProject = Rxn<ProjectModel>();
   Rxn<Color> selectedColor = Rxn<Color>();
+  // WebViewController webViewController = Get.find();
 
   var rememberMe = false.obs;
   var googleSignInVisible = false.obs;
@@ -38,6 +40,7 @@ class AuthController extends GetxController {
   var isOtpLoading = false.obs;
   var isOTP_auth = false.obs;
   var isPWD_auth = false.obs;
+  var isSigninApiCalling = false.obs;
   var otpChars = '4'.obs;
   var otpExpiryTime = '2'.obs;
   var authType = AuthType.none.obs;
@@ -131,9 +134,7 @@ class AuthController extends GetxController {
     // 1. Gather data for the request
     // Note: Assuming you have a way to pass the base ARM url here.
     // If Const.getFullARMUrl simply gives the full string, you can adjust the ApiManager slightly.
-    var baseUrl = await AppConst.getFullARMUrl(
-      ApiEndpoints.API_GET_LOGINUSER_DETAILS,
-    );
+
     var projectName = selectedProject.value?.schemaName ?? '';
     // 1. Retrieve the data
     final lastData = StorageService.retrieveLastLoginData(projectName);
@@ -155,7 +156,6 @@ class AuthController extends GetxController {
     //       );
     // 2. Call the new ApiManager method
     final result = await ApiManager.instance.getLoginUserDetails(
-      baseUrl: baseUrl,
       projectName: projectName,
       userName: username,
     );
@@ -197,11 +197,20 @@ class AuthController extends GetxController {
     }
   }
 
+  void _startLogin() {
+    isSigninApiCalling.value = true;
+  }
+
+  void _stopLogin() {
+    isSigninApiCalling.value = false;
+  }
+
   Future<void> callSignInAPI() async {
     if (!validateForm()) return;
 
     FocusManager.instance.primaryFocus?.unfocus();
     // LoadingScreen.show();
+    _startLogin();
 
     // 1. Build the request body
     var projectName = selectedProject.value?.schemaName ?? '';
@@ -240,11 +249,14 @@ class AuthController extends GetxController {
     var url = await AppConst.getFullARMUrl(ApiEndpoints.API_SIGNIN);
 
     // 2. Call ApiManager
+    print(url);
+    print(signInBody.toString());
     final result = await ApiManager.instance.signIn(url: url, body: signInBody);
 
     // LoadingScreen.dismiss();
 
     // 3. Handle UI States
+
     switch (result) {
       case ApiSuccess(data: final response):
         if (response.isSuccess) {
@@ -292,6 +304,8 @@ class AuthController extends GetxController {
         );
         break;
     }
+
+    _stopLogin();
   }
 
   String getGUID() {
@@ -354,8 +368,19 @@ class AuthController extends GetxController {
     // Get.offAllNamed(Routes.LandingPage);
     //
     //burnur code for navigating to ess portal - amrith--->
+    final result = await ApiManager.instance.connectToAxpert();
 
-    Get.offAllNamed(Routes.HOME);
+    if (result is ApiSuccess<bool>) {
+      isAxpertConnectEstablished = result.data;
+    } else if (result is ApiError<bool>) {
+      error(result.message);
+    }
+    var sessionid = StorageService.sessionId ?? '';
+    var url = await AppConst.getFullWebUrl(
+      "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
+    );
+
+    WebViewController.open(url: url);
   }
 
   Future<void> _callApiForMobileNotification() async {

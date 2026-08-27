@@ -329,14 +329,15 @@ class ApiManager {
   }
 
   Future<ApiResult<AuthUserDetailsModel>> getLoginUserDetails({
-    required String baseUrl, // Pass the ARM URL here
     required String projectName,
     required String userName,
   }) async {
-    baseUrl += baseUrl.endsWith("/") ? "" : "/";
-    final url =
-        baseUrl +
-        ApiEndpoints.API_GET_LOGINUSER_DETAILS; // Or ApiEndpoints...
+    var url = await AppConst.getFullARMUrl(
+      ApiEndpoints.API_GET_LOGINUSER_DETAILS,
+    );
+    // baseUrl += baseUrl.endsWith("/") ? "" : "/";
+    // final url =
+    //     baseUrl + ApiEndpoints.API_GET_LOGINUSER_DETAILS; // Or ApiEndpoints...
 
     final body = jsonEncode({"appname": projectName, "UserName": userName});
 
@@ -460,6 +461,48 @@ class ApiManager {
       } else {
         return ApiError(message);
       }
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } on FormatException {
+      return ApiError('Invalid response from server.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<bool>> connectToAxpert() async {
+    try {
+      final url = await AppConst.getFullARMUrl(
+        ApiEndpoints.API_CONNECTTOAXPERT,
+      );
+
+      final body = jsonEncode({'ARMSessionId': StorageService.sessionId ?? ''});
+
+      final data = await _postToServer(url, body: body, isBearer: true);
+      print(data);
+      final resultObj = data['result'] as Map<String, dynamic>?;
+
+      if (resultObj == null) {
+        return ApiError('Invalid response format from server.');
+      }
+
+      final isSuccess =
+          resultObj['success']?.toString().toLowerCase() == 'true';
+
+      if (isSuccess) {
+        debugPrint('connectToAxpert: ${data.toString()}');
+
+        return ApiSuccess(true);
+      }
+
+      final message =
+          resultObj['message']?.toString() ?? 'Failed to connect to Axpert.';
+
+      return ApiError(message);
     } on _ApiException catch (e) {
       return ApiError(e.message);
     } on TimeoutException {
