@@ -174,7 +174,7 @@ class OnboardingView extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                          WebViewController.open(url: "https://axi-global.com");
+                          // WebViewController.open(url: "https://axi-global.com");
                         },
                         style: ElevatedButton.styleFrom(
                           elevation: 0,

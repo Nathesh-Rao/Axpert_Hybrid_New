@@ -1,143 +1,9 @@
 import 'dart:developer';
 
+import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:get/get.dart';
-
-// class WebViewController extends GetxController {
-//   // ── State ────────────────────────────────────────────────────────
-//   final RxString currentUrl = ''.obs;
-//   final RxString pageTitle = ''.obs;
-//   final RxBool isLoading = true.obs;
-//   final RxInt loadingProgress = 0.obs;
-//   final RxBool canGoBack = false.obs;
-//   final RxBool canGoForward = false.obs;
-
-//   // ── Chrome (top bar + bottom nav) visibility ──────────────────────
-//   final RxBool isChromeVisible = true.obs;
-//   int _lastScrollY = 0;
-
-//   // Internal webview controller reference (set from view)
-//   dynamic _webViewController;
-
-//   // ── Open (the only method you need to call) ───────────────────────
-//   static void open({required String url, String? title}) {
-//     // Auto-upgrade http → https
-//     if (url.startsWith('http://')) {
-//       url = url.replaceFirst('http://', 'https://');
-//     }
-
-//     if (!Get.isRegistered<WebViewController>()) {
-//       Get.put(WebViewController());
-//     }
-
-//     final ctrl = Get.find<WebViewController>();
-//     ctrl.currentUrl.value = url;
-//     ctrl.pageTitle.value = title ?? '';
-//     ctrl.isLoading.value = true;
-//     ctrl.canGoBack.value = false;
-//     ctrl.canGoForward.value = false;
-//     ctrl.isChromeVisible.value = true;
-//     ctrl._lastScrollY = 0;
-
-//     Get.to(
-//       () => const WebviewView(),
-//       transition: Transition.fadeIn,
-//       duration: const Duration(milliseconds: 350),
-//     );
-//   }
-
-//   static void offAllOpen({required String url, String? title}) {
-//     // Auto-upgrade http → https
-//     if (url.startsWith('http://')) {
-//       url = url.replaceFirst('http://', 'https://');
-//     }
-
-//     if (!Get.isRegistered<WebViewController>()) {
-//       Get.put(WebViewController());
-//     }
-
-//     final ctrl = Get.find<WebViewController>();
-//     ctrl.currentUrl.value = url;
-//     ctrl.pageTitle.value = title ?? '';
-//     ctrl.isLoading.value = true;
-//     ctrl.canGoBack.value = false;
-//     ctrl.canGoForward.value = false;
-//     ctrl.isChromeVisible.value = true;
-//     ctrl._lastScrollY = 0;
-
-//     Get.offAll(
-//       () => const WebviewView(),
-//       transition: Transition.downToUp,
-//       duration: const Duration(milliseconds: 350),
-//     );
-//   }
-
-//   // ── Called from the view to hand over the native controller ──────
-//   void attachWebViewController(dynamic nativeCtrl) {
-//     _webViewController = nativeCtrl;
-//   }
-
-//   // ── Navigation helpers ───────────────────────────────────────────
-//   Future<void> goBack() async {
-//     if (_webViewController != null) await _webViewController.goBack();
-//   }
-
-//   Future<void> goForward() async {
-//     if (_webViewController != null) await _webViewController.goForward();
-//   }
-
-//   Future<void> reload() async {
-//     if (_webViewController != null) await _webViewController.reload();
-//   }
-
-//   void closeScreen() => Get.back();
-
-//   // ── WebView event callbacks ──────────────────────────────────────
-//   void onPageStarted(String url) {
-//     currentUrl.value = url;
-//     isLoading.value = true;
-//     loadingProgress.value = 0;
-//   }
-
-//   void onProgressChanged(int progress) {
-//     loadingProgress.value = progress;
-//     if (progress == 100) isLoading.value = false;
-//   }
-
-//   void onPageFinished(String url) {
-//     currentUrl.value = url;
-//     isLoading.value = false;
-//     loadingProgress.value = 100;
-//   }
-
-//   void onTitleChanged(String title) {
-//     if (title.isNotEmpty) pageTitle.value = title;
-//   }
-
-//   void updateNavState({required bool canBack, required bool canForward}) {
-//     canGoBack.value = canBack;
-//     canGoForward.value = canForward;
-//   }
-
-//   // ── Scroll-aware chrome visibility ───────────────────────────────
-//   void onScrollChanged(int x, int y) {
-//     // Scrolling down → hide chrome
-//     if (y > _lastScrollY + 10) {
-//       if (isChromeVisible.value) isChromeVisible.value = false;
-//     }
-//     // Scrolling up → show chrome
-//     else if (y < _lastScrollY - 5) {
-//       if (!isChromeVisible.value) isChromeVisible.value = true;
-//     }
-//     _lastScrollY = y;
-//   }
-
-//   // Tap anywhere on webview → always reveal chrome
-//   void showChrome() {
-//     if (!isChromeVisible.value) isChromeVisible.value = true;
-//   }
-// }
 
 import 'dart:async';
 import 'dart:io';
@@ -146,6 +12,10 @@ import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../../../core/common.dart';
+import '../../../data/const/app_const.dart';
+import '../../../data/services/storage_service.dart';
 
 class WebViewController extends GetxController {
   // ── State ────────────────────────────────────────────────────────
@@ -188,11 +58,23 @@ class WebViewController extends GetxController {
 
   Timer? _longPressTimer;
 
+  String username = '';
+  String projectname = '';
+  var willAuth = false;
+
   // ── File extensions ─────────────────────────────────────────────
   @override
   void onInit() {
-    isAxpertConnectEstablished = true;
+    isAxpertConnectEstablished = false;
+    _initializeWebSession();
     super.onInit();
+  }
+
+  @override
+  void onReady() {
+    updateUserDetaiils();
+    getBiometricStatus();
+    super.onReady();
   }
 
   final List<String> imageExtensions = [
@@ -208,6 +90,196 @@ class WebViewController extends GetxController {
     'doc',
     'pdf',
   ];
+
+  // ────────────────────────────────────────────────────────────────
+  // userDetails
+  // ────────────────────────────────────────────────────────────────
+
+  Future<void> _initializeWebSession() async {
+    var sessionid = StorageService.sessionId ?? '';
+
+    if (sessionid.isEmpty) {
+      print("Error: Session ID is empty!");
+      return;
+    }
+
+    var url = await AppConst.getFullWebUrl(
+      "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
+    );
+
+    currentUrl.value = '';
+    openWebView(url: url);
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // userDetails
+  // ────────────────────────────────────────────────────────────────
+
+  void updateUserDetaiils() {
+    username = StorageService.userName ?? '';
+    projectname = StorageService.projectName ?? '';
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // getBiometricStatus
+  // ────────────────────────────────────────────────────────────────
+
+  Future<void> getBiometricStatus() async {
+    var tag = "getBiometricStatus";
+    var willAuthLocal = StorageService.getWillBiometricAuthenticateForThisUser(
+      projectName: projectname,
+      username: username,
+    );
+
+    log("willAuthLocal : $willAuthLocal", name: tag);
+    if (willAuthLocal == null || willAuthLocal == false) {
+      Get.bottomSheet(
+        PopScope(
+          canPop: false,
+          child: Container(
+            padding: EdgeInsets.only(
+              top: 12,
+              left: 24,
+              right: 24,
+              bottom: MediaQuery.of(Get.context!).padding.bottom + 24,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 4,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkBlue.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.fingerprint_rounded,
+                    color: AppColors.darkBlue,
+                    size: 64,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Title
+                Text(
+                  "Biometric Authentication",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                    color: AppColors.darkBlue,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+
+                // Subtitle
+                Text(
+                  "Log into your project account faster and more securely using your phone's biometric credentials.",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w400,
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+
+                // Primary Action Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.darkBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: () async {
+                      var willAuthenticate =
+                          await CommonMethods.showBiometricDialog();
+                      log("willAuthenticate : $willAuthenticate", name: tag);
+
+                      Get.back();
+                      await StorageService.setWillBiometricAuthenticateForThisUser(
+                        projectName: projectname,
+                        username: username,
+                        willAuthenticate: willAuthenticate,
+                      );
+                      willAuth = willAuthenticate;
+                    },
+                    child: Text(
+                      "Enable Biometric Login",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Secondary Action Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Get.back();
+                      await StorageService.setWillBiometricAuthenticateForThisUser(
+                        projectName: projectname,
+                        username: username,
+                        willAuthenticate: false,
+                      );
+                      willAuth = false;
+                    },
+                    child: Text(
+                      "Skip for now",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        isDismissible: false,
+        isScrollControlled: true,
+        enableDrag: false,
+        barrierColor: Colors.black.withValues(alpha: 0.4),
+        enterBottomSheetDuration: const Duration(milliseconds: 400),
+      );
+    } else {
+      willAuth = willAuthLocal;
+    }
+  }
 
   // ────────────────────────────────────────────────────────────────
   // OPEN
@@ -252,62 +324,62 @@ class WebViewController extends GetxController {
     return false;
   }
 
-  static void open({required String url, String? title}) {
-    // Auto-upgrade http → https
+  // static void open({required String url, String? title}) {
+  //   // Auto-upgrade http → https
 
-    if (url.startsWith('http://')) {
-      url = url.replaceFirst('http://', 'https://');
-    }
+  //   if (url.startsWith('http://')) {
+  //     url = url.replaceFirst('http://', 'https://');
+  //   }
 
-    if (!Get.isRegistered<WebViewController>()) {
-      Get.put(WebViewController());
-    }
+  //   if (!Get.isRegistered<WebViewController>()) {
+  //     Get.put(WebViewController());
+  //   }
 
-    final ctrl = Get.find<WebViewController>();
+  //   final ctrl = Get.find<WebViewController>();
 
-    ctrl.currentUrl.value = url;
-    ctrl.pageTitle.value = title ?? '';
-    ctrl.isLoading.value = true;
-    ctrl.canGoBack.value = false;
-    ctrl.canGoForward.value = false;
-    ctrl.isChromeVisible.value = true;
-    ctrl._lastScrollY = 0;
+  //   ctrl.currentUrl.value = url;
+  //   ctrl.pageTitle.value = title ?? '';
+  //   ctrl.isLoading.value = true;
+  //   ctrl.canGoBack.value = false;
+  //   ctrl.canGoForward.value = false;
+  //   ctrl.isChromeVisible.value = true;
+  //   ctrl._lastScrollY = 0;
 
-    Get.to(
-      () => const WebviewView(),
-      transition: Transition.fadeIn,
+  //   Get.to(
+  //     () => const WebviewView(),
+  //     transition: Transition.fadeIn,
 
-      duration: const Duration(milliseconds: 350),
-    );
-  }
+  //     duration: const Duration(milliseconds: 350),
+  //   );
+  // }
 
-  static void offAllOpen({required String url, String? title}) {
-    // Auto-upgrade http → https
+  // static void offAllOpen({required String url, String? title}) {
+  //   // Auto-upgrade http → https
 
-    if (url.startsWith('http://')) {
-      url = url.replaceFirst('http://', 'https://');
-    }
+  //   if (url.startsWith('http://')) {
+  //     url = url.replaceFirst('http://', 'https://');
+  //   }
 
-    if (!Get.isRegistered<WebViewController>()) {
-      Get.put(WebViewController());
-    }
+  //   if (!Get.isRegistered<WebViewController>()) {
+  //     Get.put(WebViewController());
+  //   }
 
-    final ctrl = Get.find<WebViewController>();
+  //   final ctrl = Get.find<WebViewController>();
 
-    ctrl.currentUrl.value = url;
-    ctrl.pageTitle.value = title ?? '';
-    ctrl.isLoading.value = true;
-    ctrl.canGoBack.value = false;
-    ctrl.canGoForward.value = false;
-    ctrl.isChromeVisible.value = true;
-    ctrl._lastScrollY = 0;
+  //   ctrl.currentUrl.value = url;
+  //   ctrl.pageTitle.value = title ?? '';
+  //   ctrl.isLoading.value = true;
+  //   ctrl.canGoBack.value = false;
+  //   ctrl.canGoForward.value = false;
+  //   ctrl.isChromeVisible.value = true;
+  //   ctrl._lastScrollY = 0;
 
-    Get.offAll(
-      () => const WebviewView(),
-      transition: Transition.downToUp,
-      duration: const Duration(milliseconds: 350),
-    );
-  }
+  //   Get.offAll(
+  //     () => const WebviewView(),
+  //     transition: Transition.downToUp,
+  //     duration: const Duration(milliseconds: 350),
+  //   );
+  // }
 
   // ────────────────────────────────────────────────────────────────
   // WEBVIEW ATTACH

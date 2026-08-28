@@ -1,30 +1,21 @@
 import 'dart:developer';
 
-import 'package:animate_do/animate_do.dart';
 import 'package:axpert/app/core/common.dart';
 import 'package:axpert/app/data/services/api_manger.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
-import 'package:axpert/app/core/routes/app_routes.dart';
 import 'package:axpert/app/modules/webview/widgets/session_expired_widget.dart';
 import 'package:axpert/app/widgets/widgets.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-import '../../core/theme/app_colors.dart';
-import '../../widgets/axi_logo.dart';
 
 const double _kTopBarHeight = 64.0;
 const double _kBottomBarHeight = 64.0;
 
 class WebviewView extends GetView<WebViewController> {
   const WebviewView({super.key});
+
+
 
   @override
   Widget build(BuildContext context) {

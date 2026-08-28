@@ -186,7 +186,6 @@ class ApiManager {
   Map<String, dynamic> _handleResponse(http.Response response) {
     if (response.statusCode == 200) {
       var decoded = jsonDecode(response.body);
-
       if (decoded is String) {
         decoded = jsonDecode(decoded);
       }
@@ -199,7 +198,15 @@ class ApiManager {
     }
 
     if (response.statusCode == 400 || response.statusCode == 401) {
-      throw _ApiException('Session expired or invalid request.');
+      var decoded = jsonDecode(response.body);
+      if (decoded is String) {
+        decoded = jsonDecode(decoded);
+      }
+
+      var message =
+          decoded['result']['message'] ?? 'Session expired or invalid request.';
+
+      throw _ApiException(message);
     }
 
     throw _ApiException(
@@ -525,6 +532,247 @@ class ApiManager {
       await _postToServer(url, body: body, isBearer: true);
 
       return ApiSuccess(true);
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } on FormatException {
+      return ApiError('Invalid response from server.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<Map<String, dynamic>>> requestForgotPasswordOTP({
+    required String appName,
+    required String username,
+    required String email,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(ApiEndpoints.API_FORGOTPASSWORD);
+      final body = jsonEncode({
+        "appname": appName,
+        "username": username,
+        'email': email,
+      });
+
+      final data = await _postToServer(url, body: body);
+      final resultObj = data["result"] as Map<String, dynamic>?;
+
+      if (resultObj == null) {
+        return ApiError('Invalid response format from server.');
+      }
+
+      if (resultObj["success"]?.toString().toLowerCase() == "false") {
+        return ApiError(
+          resultObj["message"]?.toString() ?? 'Failed to send OTP.',
+        );
+      }
+
+      return ApiSuccess(resultObj);
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<String>> validateUserOTP({
+    required String regId,
+    required String otp,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(
+        ApiEndpoints.API_OTP_VALIDATE_USER,
+      );
+      final body = jsonEncode({'regid': regId, 'otp': otp});
+
+      final data = await _postToServer(url, body: body);
+      final resultObj = data["result"] as Map<String, dynamic>?;
+
+      if (resultObj == null) {
+        return ApiError('Invalid response format from server.');
+      }
+
+      if (resultObj["success"]?.toString().toLowerCase() == "false") {
+        return ApiError(resultObj["message"]?.toString() ?? 'Invalid OTP.');
+      }
+
+      return ApiSuccess(resultObj["message"]?.toString() ?? 'OTP Validated.');
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<String>> resetPasswordWithOTP({
+    required String appName,
+    required String email,
+    required String regId,
+    required String updatedPassword,
+    required String otp,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(
+        ApiEndpoints.API_VALIDATE_FORGETPASSWORD,
+      );
+      final body = jsonEncode({
+        'appname': appName,
+        'email': email,
+        'regid': regId,
+        'updatedPassword': updatedPassword,
+        'otp': otp,
+      });
+
+      final data = await _postToServer(url, body: body);
+      final resultObj = data["result"] as Map<String, dynamic>?;
+
+      if (resultObj == null) {
+        return ApiError('Invalid response format from server.');
+      }
+
+      if (resultObj["success"]?.toString().toLowerCase() == "false") {
+        return ApiError(
+          resultObj["message"]?.toString() ?? 'Failed to reset password.',
+        );
+      }
+
+      return ApiSuccess(
+        resultObj["message"]?.toString() ?? 'Password reset successfully.',
+      );
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<List<String>>> getUserGroups({
+    required String appName,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(ApiEndpoints.API_GET_USERGROUPS);
+      final body = jsonEncode({"appname": appName});
+
+      final data = await _postToServer(url, body: body);
+
+      final resultObj = data["result"] as Map<String, dynamic>?;
+      if (resultObj == null)
+        return ApiError('Invalid response format from server.');
+
+      final dataList = resultObj["data"] as List?;
+      if (dataList == null) return ApiError('No user groups found.');
+
+      List<String> groups = [];
+      for (var item in dataList) {
+        if (item["usergroup"] != null) {
+          groups.add(item["usergroup"].toString());
+        }
+      }
+
+      return ApiSuccess(groups);
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } on TimeoutException {
+      return ApiError('Request timed out. Please try again.');
+    } on http.ClientException {
+      return ApiError('Network error. Please check your connection.');
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<Map<String, dynamic>>> validateLoginOTP({
+    required String otpLoginKey,
+    required String otp,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(ApiEndpoints.API_VALIDATE_OTP);
+      final body = jsonEncode({"OtpLoginKey": otpLoginKey, "OTP": otp});
+
+      final data = await _postToServer(url, body: body);
+      final resultObj = data["result"] as Map<String, dynamic>?;
+
+      if (resultObj == null) return ApiError('Invalid response format.');
+      if (resultObj["success"]?.toString().toLowerCase() == "false") {
+        return ApiError(resultObj["message"]?.toString() ?? 'Invalid OTP.');
+      }
+      return ApiSuccess(resultObj);
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<String>> resendLoginOTP({
+    required String otpLoginKey,
+  }) async {
+    try {
+      final url = await AppConst.getFullARMUrl(ApiEndpoints.API_RESEND_OTP);
+      final body = jsonEncode({"OtpLoginKey": otpLoginKey});
+
+      final data = await _postToServer(url, body: body);
+      final resultObj = data["result"] as Map<String, dynamic>?;
+
+      if (resultObj == null) return ApiError('Invalid response format.');
+      if (resultObj["success"]?.toString().toLowerCase() == "false") {
+        return ApiError(
+          resultObj["message"]?.toString() ?? 'Failed to resend OTP.',
+        );
+      }
+      return ApiSuccess(
+        resultObj["message"]?.toString() ?? 'OTP resent successfully.',
+      );
+    } on _ApiException catch (e) {
+      return ApiError(e.message);
+    } catch (e) {
+      return ApiError('Something went wrong: $e');
+    }
+  }
+
+  Future<ApiResult<bool>> checkBiometricFlag({
+    required String baseUrl,
+    required String appName,
+  }) async {
+    baseUrl += baseUrl.endsWith("/") ? "" : "/";
+    final url = baseUrl + ApiEndpoints.API_GET_SIGNINDETAILS;
+    final body = jsonEncode({"appname": appName});
+
+    try {
+      final data = await _postToServer(url, body: body);
+
+      final resultObj = data["result"] as Map<String, dynamic>?;
+      if (resultObj == null) {
+        return ApiError('Invalid response format from server.');
+      }
+
+      if (resultObj["success"]?.toString().toLowerCase() == "true") {
+        final dataObj = resultObj["data"];
+        if (dataObj != null) {
+          final isEnabled =
+              dataObj["enablefingerprint"] == true ||
+              dataObj["enablefingerprint"]?.toString().toLowerCase() == "true";
+          return ApiSuccess(isEnabled);
+        }
+      }
+
+      return ApiSuccess(false);
     } on _ApiException catch (e) {
       return ApiError(e.message);
     } on TimeoutException {

@@ -46,7 +46,10 @@ class AxiTheme {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        hintStyle: TextStyle(color: AppColors.textPlaceholder, fontSize: 18),
+        hintStyle: GoogleFonts.poppins(
+          color: AppColors.textPlaceholder,
+          fontSize: 18,
+        ),
       ),
 
       // Card theme

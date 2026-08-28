@@ -1,6 +1,7 @@
 import 'package:axpert/app/core/common.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/modules/auth/controller/auth_controller.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:axpert/app/modules/auth/widget/login_button.dart';
 import 'package:axpert/app/modules/auth/widget/login_field.dart';
@@ -14,9 +15,9 @@ class LoginView extends GetView<AuthController> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.onLoad();
-    });
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   controller.onLoad();
+    // });
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -256,36 +257,37 @@ class LoginView extends GetView<AuthController> {
                                             ],
                                           ),
                                         ),
-                                        // InkWell(
-                                        //   onTap: () {
-                                        //     Get.toNamed(Routes.ForgetPassword);
-                                        //   },
-                                        //   child: Text("Forgot Password?",
-                                        //       style: GoogleFonts.manrope(
-                                        //         decoration:
-                                        //             TextDecoration.underline,
-                                        //         fontWeight: FontWeight.w600,
-                                        //         fontSize: 13,
-                                        //         color: Colors.blueAccent,
-                                        //       )),
-                                        // )
+
                                         Obx(
                                           () => controller.isPWD_auth.value
                                               ? InkWell(
                                                   onTap: () {
-                                                    // Get.toNamed(
-                                                    //   Routes.ForgetPassword,
-                                                    // );
+                                                    Get.toNamed(
+                                                      Routes.FORGOT_PASSWORD,
+                                                      arguments: {
+                                                        'color': controller
+                                                            .selectedColor
+                                                            .value,
+                                                        'project': controller
+                                                            .currentProjectName
+                                                            .value,
+                                                        'username': controller
+                                                            .userNameController
+                                                            .text,
+                                                      },
+                                                    );
                                                   },
                                                   child: Text(
                                                     "Forgot Password?",
                                                     style: GoogleFonts.manrope(
-                                                      decoration: TextDecoration
-                                                          .underline,
                                                       fontWeight:
-                                                          FontWeight.w600,
+                                                          FontWeight.bold,
                                                       fontSize: 13,
-                                                      color: Colors.blueAccent,
+                                                      color:
+                                                          controller
+                                                              .selectedColor
+                                                              .value ??
+                                                          Colors.blueAccent,
                                                     ),
                                                   ),
                                                 )
@@ -302,8 +304,15 @@ class LoginView extends GetView<AuthController> {
                                 ),
                                 Obx(
                                   () => WidgetLoginButton(
-                                    icon: Icon(Icons.security),
-                                    label: "NEXT",
+                                    loading: controller.isUserDataLoading.value,
+                                    icon: controller.isUserDataLoading.value
+                                        ? CupertinoActivityIndicator(
+                                            color: Colors.white,
+                                          )
+                                        : Icon(Icons.security),
+                                    label: controller.isUserDataLoading.value
+                                        ? "validating User"
+                                        : "NEXT",
                                     visible:
                                         controller.authType.value ==
                                             AuthType.none ||
@@ -316,22 +325,31 @@ class LoginView extends GetView<AuthController> {
                                   ),
                                 ),
                                 Obx(
-                                  () => Skeletonizer(
-                                    enabled:
+                                  () => WidgetLoginButton(
+                                    loading:
                                         controller.isSigninApiCalling.value,
-                                    child: WidgetLoginButton(
-                                      icon: Icon(Icons.security),
-                                      label: _getLoginButtonLabel(),
-                                      visible:
-                                          controller.authType.value ==
-                                              AuthType.both ||
-                                          controller.authType.value ==
-                                              AuthType.passwordOnly,
-                                      onPressed: () {
-                                        controller.callSignInAPI();
-                                      },
-                                      color: controller.selectedColor.value,
-                                    ),
+                                    icon: controller.isSigninApiCalling.value
+                                        ? CupertinoActivityIndicator(
+                                            color: Colors.white,
+                                          )
+                                        : Icon(Icons.security),
+                                    label: controller.isSigninApiCalling.value
+                                        ? controller
+                                              .signInApiStatusMessage
+                                              .value
+                                        : _getLoginButtonLabel(),
+                                    visible:
+                                        controller.authType.value ==
+                                            AuthType.both ||
+                                        controller.authType.value ==
+                                            AuthType.passwordOnly,
+                                    onPressed: () {
+                                      if (controller.isSigninApiCalling.value) {
+                                        return;
+                                      }
+                                      controller.callSignInAPI();
+                                    },
+                                    color: controller.selectedColor.value,
                                   ),
                                 ),
                                 SizedBox(
@@ -586,7 +604,6 @@ class LoginView extends GetView<AuthController> {
     var baseColor = color ?? const Color(0xff4B59D9);
 
     return PopupMenuButton<int>(
-      // 1. Menu Styling: Added a subtle color tint so it isn't pure white
       color: Colors.white,
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -607,12 +624,28 @@ class LoginView extends GetView<AuthController> {
           (p) => PopupMenuItem(
             value: p.id,
             child: Row(
-              spacing: 5,
+              spacing: 10,
               children: [
-                Icon(
-                  Icons.circle,
-                  size: 16,
-                  color: AppColors.colorFromHex(p.color) ?? Colors.black87,
+                // Image.asset(
+                //   'assets/icons/project_icon.png',
+                //   width: 16,
+                //   color: AppColors.colorFromHex(p.color) ?? Colors.black87,
+                // ),
+                // Icon(
+                //   Icons.casino_outlined,
+                //   size: 16,
+                //   color: AppColors.colorFromHex(p.color) ?? Colors.black87,
+                // ),
+
+                //  if (p.schemaName == controller.currentProjectName.value)
+                Radio(
+                  value: p.schemaName,
+                  groupValue: controller.currentProjectName.value,
+                  activeColor:
+                      AppColors.colorFromHex(p.color) ?? Colors.black87,
+                  fillColor: WidgetStatePropertyAll(
+                    AppColors.colorFromHex(p.color) ?? Colors.black87,
+                  ),
                 ),
                 Text(
                   p.schemaName,
@@ -622,6 +655,13 @@ class LoginView extends GetView<AuthController> {
                     color: AppColors.colorFromHex(p.color) ?? Colors.black87,
                   ),
                 ),
+                Spacer(),
+                // if (p.schemaName == controller.currentProjectName.value)
+                //   Icon(
+                //     Icons.arrow_circle_left_outlined,
+                //     size: 16,
+                //     color: AppColors.colorFromHex(p.color) ?? Colors.black87,
+                //   ),
               ],
             ),
           ),
@@ -643,9 +683,8 @@ class LoginView extends GetView<AuthController> {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center, // Centered content
+              spacing: 10,
               children: [
-                Icon(Icons.manage_history_rounded, color: baseColor, size: 18),
-                const SizedBox(width: 8),
                 Text(
                   'Manage Projects',
                   style: GoogleFonts.poppins(
@@ -653,6 +692,11 @@ class LoginView extends GetView<AuthController> {
                     fontWeight: FontWeight.w600,
                     color: baseColor,
                   ),
+                ),
+                Icon(
+                  Icons.arrow_circle_right_outlined,
+                  color: baseColor,
+                  size: 18,
                 ),
               ],
             ),

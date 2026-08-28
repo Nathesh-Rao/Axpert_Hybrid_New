@@ -1,4 +1,6 @@
 import 'package:axpert/app/modules/auth/bindings/auth_bindings.dart';
+import 'package:axpert/app/modules/auth/controller/forgot_password_controller.dart';
+import 'package:axpert/app/modules/auth/views/forgot_passwrod_view.dart';
 import 'package:axpert/app/modules/auth/views/login_view.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
@@ -6,6 +8,7 @@ import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:get/get.dart';
 
+import '../../modules/auth/views/otp_view.dart';
 import '../../modules/splash/splash_binding.dart';
 import '../../modules/splash/splash_view.dart';
 import '../../modules/onboarding/onboarding_binding.dart';
@@ -13,6 +16,7 @@ import '../../modules/onboarding/onboarding_view.dart';
 import '../../modules/home/home_binding.dart';
 import '../../modules/home/home_view.dart';
 
+import '../../modules/webview/bindings/webview_bindings.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -43,11 +47,22 @@ class AppPages {
       transition: Transition.fadeIn,
     ),
     GetPage(
+      name: Routes.OTP,
+      page: () => const OTPView(),
+      transition: Transition.fadeIn,
+    ),
+    GetPage(
+      name: Routes.FORGOT_PASSWORD,
+      page: () => ForgetPasswordView(),
+      binding: BindingsBuilder(() {
+        Get.put(ForgetPasswordController());
+      }),
+      transition: Transition.fadeIn,
+    ),
+    GetPage(
       name: Routes.WEBVIEW,
       page: () => WebviewView(),
-      // binding: BindingsBuilder(() {
-
-      // }),
+      binding: WebviewBindings(),
       transition: Transition.fadeIn,
     ),
     // GetPage(

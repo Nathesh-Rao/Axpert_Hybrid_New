@@ -10,10 +10,12 @@ class WidgetLoginButton extends StatelessWidget {
     this.icon,
     this.gradient,
     this.color,
+    this.loading = false,
   });
 
   final String label;
   final bool visible;
+  final bool loading;
   final Widget? icon;
   final Color? color;
   final VoidCallback? onPressed;
@@ -57,8 +59,8 @@ class WidgetLoginButton extends StatelessWidget {
               Text(
                 label,
                 style: GoogleFonts.manrope(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+                  fontSize: loading ? 12 : 18,
+                  fontWeight: loading ? FontWeight.w500 : FontWeight.w700,
                 ),
               ),
             ],

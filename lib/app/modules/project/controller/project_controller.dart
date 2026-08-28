@@ -154,7 +154,7 @@ class ProjectController extends GetxController
               Expanded(
                 child: Text(
                   message,
-                  style: const TextStyle(
+                  style:  GoogleFonts.poppins(
                     color: AppColors.textWhite,
                     fontSize: 13,
                     fontWeight: FontWeight.w400,
@@ -263,10 +263,10 @@ class ProjectController extends GetxController
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(
+             Expanded(
               child: Text(
                 'Enable camera permission to access the QR scanner.',
-                style: TextStyle(
+                style: GoogleFonts.poppins(
                   color: AppColors.textWhite,
                   fontSize: 13,
                   fontWeight: FontWeight.w400,
@@ -346,10 +346,10 @@ class ProjectController extends GetxController
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+           Expanded(
             child: Text(
               'Invalid QR code. Please scan a valid AXI project QR.',
-              style: TextStyle(
+              style: GoogleFonts.poppins(
                 color: AppColors.textWhite,
                 fontSize: 13,
                 height: 1.4,
@@ -399,7 +399,7 @@ class ProjectController extends GetxController
           Expanded(
             child: Text(
               msg,
-              style: const TextStyle(
+              style:  GoogleFonts.poppins(
                 color: AppColors.textWhite,
                 fontSize: 13,
                 height: 1.4,
@@ -433,7 +433,7 @@ class ProjectController extends GetxController
       titleText: const SizedBox.shrink(),
       messageText: Text(
         message,
-        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        style:  GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 13),
       ),
       snackPosition: SnackPosition.BOTTOM,
       backgroundColor: AppColors.cardBackground,

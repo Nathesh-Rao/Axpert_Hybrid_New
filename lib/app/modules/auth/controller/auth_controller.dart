@@ -1,8 +1,10 @@
 // ignore_for_file: non_constant_identifier_names
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:axpert/app/core/common.dart';
+import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/enums/auth_enums.dart';
 import 'package:axpert/app/data/models/project_model.dart';
@@ -43,6 +45,7 @@ class AuthController extends GetxController {
   var isOTP_auth = false.obs;
   var isPWD_auth = false.obs;
   var isSigninApiCalling = false.obs;
+  var signInApiStatusMessage = ''.obs;
   var otpChars = '4'.obs;
   var otpExpiryTime = '2'.obs;
   var authType = AuthType.none.obs;
@@ -51,7 +54,7 @@ class AuthController extends GetxController {
   var otpErrorText = ''.obs;
   bool isDuplicate_session = false;
   bool isAxpertConnectEstablished = false;
-  final bool _isAuthFromBiometric = false;
+  bool _isAuthFromBiometric = false;
   final projects = <ProjectModel>[].obs;
   TextEditingController oPassCtrl = TextEditingController();
   TextEditingController nPassCtrl = TextEditingController();
@@ -62,6 +65,11 @@ class AuthController extends GetxController {
   var showOldPass = false.obs;
   var showNewPass = false.obs;
   var showConNewPass = false.obs;
+  // ── Timer State ────────────────────────────────────────────────────────
+  RxInt otpRemainingSeconds = 0.obs;
+  Timer? _otpTimer;
+
+  bool get isOtpTimerActive => otpRemainingSeconds.value > 0;
 
   void onLoad() async {
     await refreshCurrentProject();
@@ -76,6 +84,7 @@ class AuthController extends GetxController {
   onInit() {
     super.onInit();
     fetchProjects();
+    onLoad();
   }
 
   Future<void> fetchProjects() async {
@@ -86,7 +95,7 @@ class AuthController extends GetxController {
       case DbSuccess(:final data):
         projects.assignAll(data);
       case DbError(:final message):
-      // _showErrorSnackbar(message);
+        error(message);
     }
     // isLoadingProjects.value = false;
   }
@@ -104,10 +113,77 @@ class AuthController extends GetxController {
       userNameController.text = userName;
       userPasswordController.text =
           StorageService.getRememberedPassword(currentProjectName.value) ?? '';
+
+      await setWillAuthenticate();
     } else {
       rememberMe.value = false;
       userNameController.text = '';
       userPasswordController.text = '';
+    }
+  }
+
+  var isBiometricLoading = false.obs;
+
+  Future<void> setWillAuthenticate() async {
+    isBiometricLoading.value = true;
+    await checkBiometricFlag();
+    isBiometricLoading.value = false;
+
+    var willAuth = StorageService.getWillBiometricAuthenticateForThisUser(
+      projectName: selectedProject.value?.schemaName.trim() ?? '',
+      username: userNameController.text.toString().trim(),
+    );
+    print(("Login willAuth: $willAuth"));
+    // LogService.writeLog(
+    //     message:
+    //         "[i] LoginController\nScope: setWillAuthenticate()\nLogin willAuth: $willAuth");
+
+    if (willAuth != null) {
+      willBio_userAuthenticate.value = willAuth;
+    }
+    if (isBiometricAvailable.value) displayAuthenticationDialog();
+  }
+
+  void displayAuthenticationDialog() async {
+    if (willBio_userAuthenticate.value) {
+      try {
+        if (await CommonMethods.showBiometricDialog()) {
+          _isAuthFromBiometric = true;
+          await startLoginProcess();
+          // loginButtonClicked(bodyArgs: retrieveLastLoginData());
+        }
+      } catch (e) {
+        print(e.toString());
+        if (e.toString().contains('NotAvailable') &&
+            e.toString().contains('Authentication failure')) {
+          error(" Oops Only Biometric is allowed.");
+        }
+      } finally {
+        _isAuthFromBiometric = false;
+      }
+    } else {
+      print("willAuthenticate => $willBio_userAuthenticate");
+    }
+  }
+
+  Future<void> checkBiometricFlag() async {
+    final baseUrl = selectedProject.value?.armurl.trim() ?? '';
+    final appName = selectedProject.value?.schemaName.trim() ?? '';
+
+    final result = await ApiManager.instance.checkBiometricFlag(
+      baseUrl: baseUrl,
+      appName: appName,
+    );
+
+    switch (result) {
+      case ApiSuccess(data: final isEnabled):
+        isBiometricAvailable.value = isEnabled;
+        debugPrint("User Biometric info (enabled): $isEnabled");
+        break;
+      case ApiError(message: final errorMsg):
+        isBiometricAvailable.value = false;
+        debugPrint("Failed to check biometric flag: $errorMsg");
+        break;
     }
   }
 
@@ -237,10 +313,16 @@ class AuthController extends GetxController {
 
   void _startLogin() {
     isSigninApiCalling.value = true;
+    _updateLoginStatus('Signing you in..');
+  }
+
+  void _updateLoginStatus(String msg) {
+    signInApiStatusMessage.value = msg;
   }
 
   void _stopLogin() {
     isSigninApiCalling.value = false;
+    _updateLoginStatus('');
   }
 
   Future<void> callSignInAPI() async {
@@ -286,14 +368,9 @@ class AuthController extends GetxController {
 
     var url = await AppConst.getFullARMUrl(ApiEndpoints.API_SIGNIN);
 
-    // 2. Call ApiManager
-    print(url);
-    print(signInBody.toString());
     final result = await ApiManager.instance.signIn(url: url, body: signInBody);
 
     // LoadingScreen.dismiss();
-
-    // 3. Handle UI States
 
     switch (result) {
       case ApiSuccess(data: final response):
@@ -301,6 +378,7 @@ class AuthController extends GetxController {
           StorageService.storeLastLoginData(projectName, signInBody);
 
           if (response.message == "Login Successful.") {
+            // showDialog_changePassword();
             await processSignInDataResponse(projectName, response.rawData);
           } else if (response.otpLoginKey != null) {
             otpMsg.value = response.message;
@@ -373,6 +451,7 @@ class AuthController extends GetxController {
       sessionId: sessionId,
       userName: userName,
       nickName: nickName,
+      projectname: projectname,
     );
 
     // If you still need to log the change password status:
@@ -400,6 +479,7 @@ class AuthController extends GetxController {
 
   Future<void> _processLoginAndGoToHomePage() async {
     //mobile Notification
+    _updateLoginStatus('connecting to axpert');
     await _callApiForMobileNotification();
     //connect to Axpert
     // await _callApiForConnectToAxpert();
@@ -407,18 +487,20 @@ class AuthController extends GetxController {
     //
     //burnur code for navigating to ess portal - amrith--->
 
-    var sessionid = StorageService.sessionId ?? '';
+    // var sessionid = StorageService.sessionId ?? '';
 
-    if (sessionid.isEmpty) return;
-    var url = await AppConst.getFullWebUrl(
-      "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
-    );
+    // if (sessionid.isEmpty) return;
+    // var url = await AppConst.getFullWebUrl(
+    //   "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
+    // );
 
-    var webviewController = Get.put(WebViewController());
-    webviewController.currentUrl.value = '';
-    Get.to(WebviewView());
-    webviewController.openWebView(url: url);
+    // var webviewController = Get.put(WebViewController());
+    // webviewController.currentUrl.value = '';
+    // Get.to(Routes.WEBVIEW);
+    // webviewController.openWebView(url: url);
     // WebViewController.open(url: url);
+
+    Get.toNamed(Routes.WEBVIEW);
   }
 
   Future<void> _callApiForMobileNotification() async {
@@ -459,10 +541,10 @@ class AuthController extends GetxController {
 
     switch (result) {
       case ApiSuccess():
-        print("Mobile Notification Registered Successfully.");
+        debugPrint("Mobile Notification Registered Successfully.");
         break;
       case ApiError(message: final errorMsg):
-        print("Mobile Notification API Failed: $errorMsg");
+        debugPrint("Mobile Notification API Failed: $errorMsg");
         break;
     }
   }
@@ -485,9 +567,9 @@ class AuthController extends GetxController {
                 size: 48,
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 "Duplicate Session",
-                style: TextStyle(
+                style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: AppColors.darkBlue, // Ensure MyColors is imported
@@ -497,7 +579,7 @@ class AuthController extends GetxController {
               const SizedBox(height: 12),
               Text(
                 message,
-                style: const TextStyle(fontSize: 15, color: Colors.black87),
+                style: GoogleFonts.poppins(fontSize: 15, color: Colors.black87),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -578,21 +660,30 @@ class AuthController extends GetxController {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset("assets/images/axpert_03.png", height: 45),
+                  Image.network(
+                    selectedProject.value?.logourl ?? "",
+                    height: 45,
+                    errorBuilder: (_, _, _) {
+                      return Image.asset(
+                        "assets/images/axpert_logo_new.png",
+                        height: 45,
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
-                  const Text(
+                  Text(
                     "Reset Password",
-                    style: TextStyle(
+                    style: GoogleFonts.poppins(
                       fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.darkBlue,
+                      fontWeight: FontWeight.w500,
+                      color: selectedColor.value ?? AppColors.darkBlue,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     "Please enter your existing password and choose a new password.",
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: GoogleFonts.poppins(
                       color: Colors.grey,
                       fontSize: 14,
                       height: 1.4,
@@ -628,16 +719,46 @@ class AuthController extends GetxController {
 
                   Row(
                     children: [
+                      // Expanded(
+                      //   child: OutlinedButton(
+                      //     style: OutlinedButton.styleFrom(
+                      //       foregroundColor:
+                      //           selectedColor.value ?? AppColors.darkBlue,
+                      //       padding: const EdgeInsets.symmetric(vertical: 14),
+                      //       shape: RoundedRectangleBorder(
+                      //         borderRadius: BorderRadius.circular(12),
+                      //         side: BorderSide(color: AppColors.accentCoral),
+                      //       ),
+                      //     ),
+                      //     onPressed: () => Get.back(),
+
+                      //     child: const Text("Cancel"),
+                      //   ),
+                      // ),
                       Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
+                            foregroundColor:
+                                selectedColor.value ?? AppColors.darkBlue,
+
+                            backgroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color:
+                                    selectedColor.value ?? AppColors.darkBlue,
+                              ),
                             ),
+                            elevation: 0,
                           ),
                           onPressed: () => Get.back(),
-                          child: const Text("Cancel"),
+                          child: Text(
+                            "Cancel",
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -645,7 +766,9 @@ class AuthController extends GetxController {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            backgroundColor: AppColors.darkBlue,
+                            backgroundColor:
+                                selectedColor.value ?? AppColors.darkBlue,
+
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -653,9 +776,11 @@ class AuthController extends GetxController {
                             elevation: 0,
                           ),
                           onPressed: () => changePasswordCalled(),
-                          child: const Text(
+                          child: Text(
                             "Save",
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -682,13 +807,32 @@ class AuthController extends GetxController {
       () => TextField(
         controller: controller,
         obscureText: !showPassword.value,
+        style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w500,
+            color: (selectedColor.value ?? AppColors.darkBlue).withValues(
+              alpha: 0.5,
+            ),
+          ),
+          hintStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w500,
+            color: (selectedColor.value ?? AppColors.darkBlue).withValues(
+              alpha: 0.15,
+            ),
+          ),
+          floatingLabelStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w500,
+            color: (selectedColor.value ?? AppColors.darkBlue),
+          ),
           hintText: hint,
           // Now it correctly listens to changes in the error text!
           errorText: error.value.isEmpty ? null : error.value,
           filled: true,
-          fillColor: AppColors.grey400, // Ensure MyColors is defined
+          fillColor: (selectedColor.value ?? AppColors.darkBlue).withValues(
+            alpha: 0.1,
+          ), // Ensure MyColors is defined
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
@@ -699,7 +843,10 @@ class AuthController extends GetxController {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColors.darkBlue, width: 1.5),
+            borderSide: BorderSide(
+              color: selectedColor.value ?? AppColors.darkBlue,
+              width: 1.5,
+            ),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -708,7 +855,9 @@ class AuthController extends GetxController {
           suffixIcon: IconButton(
             icon: Icon(
               showPassword.value ? Icons.visibility_off : Icons.visibility,
-              color: Colors.grey.shade600,
+              color: (selectedColor.value ?? AppColors.darkBlue).withValues(
+                alpha: 0.5,
+              ),
             ),
             onPressed: showPassword.toggle,
           ),
@@ -747,7 +896,7 @@ class AuthController extends GetxController {
         Get.defaultDialog(
           title: "Success!",
           middleText: successMessage,
-          titleStyle: const TextStyle(
+          titleStyle: GoogleFonts.poppins(
             color: AppColors.darkBlue,
             fontWeight: FontWeight.bold,
           ),
@@ -956,5 +1105,91 @@ class AuthController extends GetxController {
       backgroundColor: Colors.transparent,
       barrierColor: AppColors.grey900.withOpacity(0.4),
     );
+  }
+
+  String get otpFormattedTime {
+    final minutes = (otpRemainingSeconds.value ~/ 60).toString().padLeft(
+      1,
+      '0',
+    );
+    final seconds = (otpRemainingSeconds.value % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds min';
+  }
+
+  void startOtpTimer() {
+    _otpTimer?.cancel();
+    otpRemainingSeconds.value = (int.tryParse(otpExpiryTime.value) ?? 2) * 60;
+    _otpTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (otpRemainingSeconds.value > 0) {
+        otpRemainingSeconds.value--;
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  @override
+  void onClose() {
+    _otpTimer?.cancel(); // Prevent memory leaks when controller dies
+    super.onClose();
+  }
+
+  // ── OTP Methods ────────────────────────────────────────────────────────
+  bool validateOTPField() {
+    otpErrorText.value = "";
+    final requiredLength = int.tryParse(otpChars.value) ?? 4;
+
+    if (otpFieldController.text.length < requiredLength) {
+      otpErrorText.value = "Enter full $requiredLength-digit OTP";
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> callVerifyOTP() async {
+    if (!validateOTPField()) return;
+
+    isOtpLoading.value = true;
+    final result = await ApiManager.instance.validateLoginOTP(
+      otpLoginKey: otpLoginKey.value,
+      otp: otpFieldController.text.trim(),
+    );
+    isOtpLoading.value = false;
+
+    switch (result) {
+      case ApiSuccess(data: final response):
+        await processSignInDataResponse(currentProjectName.value, response);
+        break;
+      case ApiError(message: final errorMsg):
+        otpErrorText.value = errorMsg;
+        break;
+    }
+  }
+
+  Future<void> callResendOTP() async {
+    otpErrorText.value = '';
+    otpFieldController.clear();
+    isOtpLoading.value = true;
+
+    final result = await ApiManager.instance.resendLoginOTP(
+      otpLoginKey: otpLoginKey.value,
+    );
+    isOtpLoading.value = false;
+
+    switch (result) {
+      case ApiSuccess(data: final successMsg):
+        Get.snackbar(
+          "Success",
+          successMsg,
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
+        startOtpTimer(); // Restart timer on success
+        break;
+      case ApiError(message: final errorMsg):
+        otpErrorText.value = errorMsg;
+        break;
+    }
   }
 }

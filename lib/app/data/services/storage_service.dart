@@ -14,15 +14,19 @@ class StorageService {
   static const _keySessionId = 'arm_session_id';
   static const _keyUserName = 'user_name';
   static const _keyNickName = 'nick_name';
+  static const _projectName = 'project_name';
   static const _keyChangePassword = 'user_change_password';
   static const _keyRememberedUsers = 'remembered_users';
   static const _keyRememberedPasswords = 'remembered_passwords';
   static const _keyRememberedGroups = 'remembered_groups';
+  static const _keyCanAuthenticate = 'can_authenticate';
+  static const _keyWillAuthenticateForUser = 'will_authenticate_for_user';
 
   static String? get token => _prefs.getString(_keyToken);
   static String? get sessionId => _prefs.getString(_keySessionId);
   static String? get userName => _prefs.getString(_keyUserName);
   static String? get nickName => _prefs.getString(_keyNickName);
+  static String? get projectName => _prefs.getString(_projectName);
   static bool get isFirstTime => _prefs.getBool(_keyIsFirstTime) ?? true;
 
   static Map<String, dynamic> _getMap(String key) {
@@ -118,11 +122,13 @@ class StorageService {
     required String sessionId,
     required String userName,
     required String nickName,
+    required String projectname,
   }) async {
     await _prefs.setString(_keyToken, token);
     await _prefs.setString(_keySessionId, sessionId);
     await _prefs.setString(_keyUserName, userName);
     await _prefs.setString(_keyNickName, nickName);
+    await _prefs.setString(_projectName, projectname);
   }
 
   static Future<void> rememberCredentialsForProject({
@@ -166,5 +172,48 @@ class StorageService {
     await _prefs.setString(_keyRememberedUsers, jsonEncode(users));
     await _prefs.setString(_keyRememberedPasswords, jsonEncode(passes));
     await _prefs.setString(_keyRememberedGroups, jsonEncode(groups));
+  }
+
+  static Future<void> setCanAuthenticate(bool value) async {
+    await _prefs.setBool(_keyCanAuthenticate, value);
+  }
+
+  static Future<void> setWillBiometricAuthenticateForThisUser({
+    required String projectName,
+    required String username,
+    required bool willAuthenticate,
+  }) async {
+    final data = _getMap(_keyWillAuthenticateForUser);
+
+    Map<String, dynamic> projectWise = {};
+    if (data.containsKey(projectName) && data[projectName] is Map) {
+      projectWise = Map<String, dynamic>.from(data[projectName]);
+    }
+
+    projectWise[username] = willAuthenticate;
+    data[projectName] = projectWise;
+
+    await _prefs.setString(_keyWillAuthenticateForUser, jsonEncode(data));
+  }
+
+  static bool? getWillBiometricAuthenticateForThisUser({
+    required String projectName,
+    required String username,
+  }) {
+    final canAuthenticate = _prefs.getBool(_keyCanAuthenticate) ?? false;
+    if (!canAuthenticate) return false;
+
+    final data = _getMap(_keyWillAuthenticateForUser);
+    if (data.isEmpty) return null;
+
+    final projectWise = data[projectName];
+    if (projectWise is Map) {
+      final userAuth = projectWise[username];
+      if (userAuth is bool) {
+        return userAuth;
+      }
+    }
+
+    return null;
   }
 }
