@@ -64,7 +64,7 @@
 //                 },
 //                 icon: Icon(
 //                   CupertinoIcons.plus_rectangle_fill_on_rectangle_fill,
-//                   color: MyColors.AXMDark,
+//                   color: AppColors.AXMDark,
 //                 ))
 //           ],*/
 //         ),
@@ -272,7 +272,7 @@
 //                     builder: (context, snapshot) {
 //                       if (snapshot.hasData) {
 //                         return Text(
-//                           "Version:${snapshot.data}${Const.APP_RELEASE_DATE}",
+//                           "Version:${snapshot.data}${AppConst.APP_RELEASE_DATE}",
 //                           style: GoogleFonts.poppins(
 //                             textStyle: TextStyle(
 //                               color: AppColors.buzzilyblack,

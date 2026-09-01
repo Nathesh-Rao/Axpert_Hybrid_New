@@ -1,25 +1,20 @@
 import 'dart:developer';
-
+import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common/methods.dart';
-import 'package:axpert/app/data/services/api_manger.dart';
-import 'package:axpert/app/modules/webview/webview_view.dart';
-import 'package:get/get.dart';
-
+import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'dart:async';
-import 'dart:io';
-
-import 'package:axpert/app/modules/webview/webview_view.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 import '../../../core/common.dart';
 import '../../../data/const/app_const.dart';
-import '../../../data/services/storage_service.dart';
+import '../../../data/services/connectivity/internet_connectivity.dart';
+import '../../../data/services/log/log_service.dart';
+import '../../../data/services/storage/storage_service.dart';
+import '../../offline_form_pages/db/db.dart';
 
 class WebViewController extends GetxController {
   // ── State ────────────────────────────────────────────────────────
-
+  Map preData = {};
   final RxString currentUrl = ''.obs;
   final RxString pageTitle = ''.obs;
 
@@ -32,7 +27,6 @@ class WebViewController extends GetxController {
   // ── Chrome visibility ───────────────────────────────────────────
   bool isAxpertConnectEstablished = false;
   final RxBool isChromeVisible = true.obs;
-
   int _lastScrollY = 0;
 
   // ── WebView controller ──────────────────────────────────────────
@@ -62,11 +56,19 @@ class WebViewController extends GetxController {
   String projectname = '';
   var willAuth = false;
 
+  // ── From Landing page controller ─────────────────────────────────────────────
+
   // ── File extensions ─────────────────────────────────────────────
   @override
   void onInit() {
+    preData = {};
     isAxpertConnectEstablished = false;
     _initializeWebSession();
+    GlobalVariableController.to.OFFLINE_FORMS_COUNT.listen((count) {
+      if (count == 0) {
+        // bottomIndex.value = 0;
+      }
+    });
     super.onInit();
   }
 
@@ -74,7 +76,55 @@ class WebViewController extends GetxController {
   void onReady() {
     updateUserDetaiils();
     getBiometricStatus();
+    _startPostLoginSync();
     super.onReady();
+  }
+
+  void _startPostLoginSync() async {
+    const String tag = "[OFFLINE_POSTLOGIN_001]";
+
+    try {
+      final isOnline = Get.find<InternetConnectivity>().isConnected.value;
+
+      LogService.writeLog(
+        message:
+            "$tag[START] Post-login offline sync started. isOnline=$isOnline",
+      );
+      GlobalVariableController.to.isDataSourcefetchingOnStart.value = true;
+      await OfflineDbModule.handlePostLogin(
+        // username: await appStorage.retrieveValue(AppStorage.USER_NAME) ?? "",
+        // projectName: globalVariableController.PROJECT_NAME.value,
+        isInternetAvailable: isOnline,
+      ).then((_) {
+        GlobalVariableController.to.isDataSourcefetchingOnStart.value = false;
+        GlobalVariableController.to.totalDsCountOnStart.value = 0;
+        GlobalVariableController.to.completedDsCountOnStart.value = 0;
+      });
+
+      // await OfflineBackgroundSyncService.instance.start();
+      LogService.writeLog(
+        message: "$tag[SUCCESS] Post-login offline sync finished",
+      );
+    } catch (e, st) {
+      LogService.writeLog(message: "$tag[FAILED] Post-login sync failed => $e");
+      LogService.writeLog(message: "$tag[STACK] $st");
+    }
+  }
+
+  void loadData() {
+    String url = preData['website'] ?? "";
+    if (url.isNotEmpty) {
+      print("widget data: ${preData['isFirstLoad']}");
+      if (preData['isFirstLoad']) {
+        //TODO successful login
+        ApiManager.instance.postHybridNotificationInfoToServer(
+          firebaseToken: AppConst.FIREBASE_TOKEN,
+          guid: AppConst.GUID,
+          deviceId: AppConst.DEVICE_ID,
+        );
+      }
+      openWebView(url: url);
+    }
   }
 
   final List<String> imageExtensions = [
@@ -553,7 +603,7 @@ class WebViewController extends GetxController {
   }
 
   Future<bool> _checkForMainUrl() async {
-    log("currentUrl.value : ${currentUrl.value}", name: "_checkForMainUrl");
+    log("loaded.value : ${currentUrl.value}", name: "_checkForMainUrl");
     log(
       "_webViewController : ${await _webViewController?.getUrl()}",
       name: "_checkForMainUrl",

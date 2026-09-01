@@ -8,9 +8,9 @@ import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/enums/auth_enums.dart';
 import 'package:axpert/app/data/models/project_model.dart';
-import 'package:axpert/app/data/services/api_endpoints.dart';
-import 'package:axpert/app/data/services/api_manger.dart';
-import 'package:axpert/app/data/services/storage_service.dart';
+import 'package:axpert/app/data/services/api/api_endpoints.dart';
+import 'package:axpert/app/data/services/api/api_manger.dart';
+import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:axpert/app/db/project_database.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
@@ -19,6 +19,8 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
+
+import '../../offline_form_pages/db/db.dart';
 
 class AuthController extends GetxController {
   Rxn<ProjectModel> selectedProject = Rxn<ProjectModel>();
@@ -193,7 +195,7 @@ class AuthController extends GetxController {
     // String packageName = packageInfo.packageName;
     var version = packageInfo.version;
     // String buildNumber = packageInfo.buildNumber;
-    AppConst.APP_VERSION = version; //+ "." + Const.APP_RELEASE_ID;
+    AppConst.APP_VERSION = version; //+ "." + AppConst.APP_RELEASE_ID;
     return AppConst.APP_VERSION;
   }
 
@@ -247,7 +249,7 @@ class AuthController extends GetxController {
 
     // 1. Gather data for the request
     // Note: Assuming you have a way to pass the base ARM url here.
-    // If Const.getFullARMUrl simply gives the full string, you can adjust the ApiManager slightly.
+    // If AppConst.getFullARMUrl simply gives the full string, you can adjust the ApiManager slightly.
 
     var projectName = selectedProject.value?.schemaName ?? '';
     // 1. Retrieve the data
@@ -379,6 +381,13 @@ class AuthController extends GetxController {
 
           if (response.message == "Login Successful.") {
             // showDialog_changePassword();
+
+            await OfflineDbModule.saveUser(
+              projectName: currentProjectName.value,
+              username: userNameController.text.toString().trim(),
+              passwordHash: userPasswordController.text.toString().trim(),
+              loginResult: response.rawData,
+            );
             await processSignInDataResponse(projectName, response.rawData);
           } else if (response.otpLoginKey != null) {
             otpMsg.value = response.message;
@@ -392,7 +401,10 @@ class AuthController extends GetxController {
           // Backend processed the request but threw a business logic error
           if (response.isDuplicateSession) {
             isDuplicate_session = true;
-            showDialog_duplicateSession(response.message);
+            showDialog_duplicateSession(
+              message: response.message,
+              color: selectedColor.value,
+            );
           } else if (response.isChangePassword) {
             showDialog_changePassword();
           } else {
@@ -445,7 +457,12 @@ class AuthController extends GetxController {
     final sessionId = json["ARMSessionId"]?.toString() ?? "";
 
     final nickName = json["nickname"]?.toString() ?? userName;
-
+    await StorageService.cacheProjectDetails(
+      projectName: projectname,
+      userName: userName,
+      webUrl: selectedProject.value?.url ?? '',
+      armUrl: selectedProject.value?.armurl ?? '',
+    );
     await StorageService.saveUserSession(
       token: token,
       sessionId: sessionId,
@@ -529,8 +546,8 @@ class AuthController extends GetxController {
       ApiEndpoints.API_MOBILE_NOTIFICATION,
     );
     var sessionId = StorageService.sessionId ?? "";
-    var fcm = fcmId ?? "0";
-
+    var fcm = fcmId = StorageService.fcmid ?? "0";
+    print("AUTHCONTROLLER. fcmid $fcm");
     // Calling the API manager is now super simple
     final result = await ApiManager.instance.sendMobileNotificationDetails(
       url: url,
@@ -549,7 +566,7 @@ class AuthController extends GetxController {
     }
   }
 
-  void showDialog_duplicateSession(String message) {
+  void showDialog_duplicateSession({required String message, Color? color}) {
     // Make sure to close any existing dialogs first
     if (Get.isDialogOpen ?? false) Get.back();
 
@@ -572,7 +589,9 @@ class AuthController extends GetxController {
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.darkBlue, // Ensure MyColors is imported
+                  color:
+                      color ??
+                      AppColors.darkBlue, // Ensure MyColors is imported
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -586,11 +605,15 @@ class AuthController extends GetxController {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
+                        foregroundColor: color ?? AppColors.darkBlue,
+                        backgroundColor: Colors.white,
+
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: color ?? AppColors.darkBlue),
                         ),
                       ),
                       onPressed: () =>
@@ -602,7 +625,7 @@ class AuthController extends GetxController {
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.darkBlue,
+                        backgroundColor: color ?? AppColors.darkBlue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(

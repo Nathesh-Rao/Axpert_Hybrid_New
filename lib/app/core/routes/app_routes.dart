@@ -7,4 +7,6 @@ abstract class Routes {
   static const OTP = '/otp';
   static const WEBVIEW = '/webview';
   static const FORGOT_PASSWORD = '/forgot_password';
+  static const OFFLINE_FORM_PAGE = '/offline_form_page';
+  static const OFFLINE_LISTING_PAGE = '/offline_listing_page';
 }

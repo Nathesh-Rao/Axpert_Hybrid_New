@@ -20,7 +20,12 @@ class AppColors {
   static const Color success = Color(0xFF22C55E);
   static const Color warning = Color(0xFFF59E0B);
   static const Color error = Color(0xFFEF4444);
-
+  static const Color red = Color(0xFFed1c24);
+  static const Color maroon = Color(0xFFc22121);
+  static const Color green = Color(0xFF4CAF50);
+  static const Color orange = Color(0xFFff4500);
+  static const Color yellow = Color(0xFFffff4c);
+  static const Color gold = Color(0xFFdaa520);
   static const Color grey50 = Color(0xFFF9FAFB);
   static const Color grey100 = Color(0xFFF3F4F6);
   static const Color grey200 = Color(0xFFE5E7EB);
@@ -41,7 +46,15 @@ class AppColors {
   static const Color primaryPurple = Color(0xFF7357F5);
   static const Color button1 = Color(0xFF6885FD);
   static const Color button2 = Color(0xFFB28FF8);
-
+  static const Color baseBlue = Color(0xff3764FC);
+  static const Color blue3 = Color(0xFF4fc3f7);
+  static const Color blue4 = Color(0xFF8591B0);
+  static const Color blue5 = Color(0xFF0D47A1);
+  static const Color blue6 = Color(0xFF1976D2);
+  static const Color blue7 = Color(0xFF42A5F5);
+  static const Color blue8 = Color(0xFFF7F8FA);
+  static const Color blue9 = Color(0xFF0d297d);
+  static const Color blue10 = Color(0xff1F41BB);
   // ============================================
   // BACKGROUND COLORS
   // ============================================
@@ -194,5 +207,25 @@ class AppColors {
     final cleaned = hex.replaceFirst('#', '');
     final value = int.tryParse('FF$cleaned', radix: 16);
     return value != null ? Color(value) : null;
+  }
+
+  static Color getOfflineColorByIndex(int index) {
+    const List<Color> colors = [
+      Colors.deepPurple,
+      Colors.green,
+      Colors.orange,
+      Colors.pink,
+      Colors.indigo,
+      Colors.red,
+      Colors.blue,
+      Colors.orange,
+      Colors.teal,
+      Colors.brown,
+      Colors.pink,
+      Colors.deepOrange,
+      Colors.deepPurple,
+    ];
+
+    return colors[index % colors.length];
   }
 }

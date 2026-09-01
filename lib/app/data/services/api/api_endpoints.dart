@@ -18,7 +18,8 @@ class ApiEndpoints {
   static const String API_FORGOTPASSWORD = "AxAuth/api/v1/AxForgotPassword";
   static const String API_CHANGE_PASSWORD = "AxAuth/api/v1/AxResetPassword";
   static const String API_SIGNOUT = "AxAuth/api/v1/ARMSignOut";
-
+  static const String API_VALIDATE_SESSION = "AxAuth/api/v1/AxValidateSession";
+  static const String ARM_PUSH_TO_QUEUE = "ARM_APIs/api/v1/ARMPushToQueue";
   //AxList ARM Services
   static const String API_GET_CARDS_WITH_DATA =
       "AxList/api/v1/GetCardsWithData";
@@ -62,7 +63,7 @@ class ApiEndpoints {
   static const String API_GET_FILE_BY_RECORDID =
       "ARM_APIs/api/v1/GetFileByRecordId";
   static const String BANNER_JSON_NAME = "mainpagebanner.json";
-
+  static const ARM_AXLIST = "AxList/api/v1/AxList";
   static const String ARM_EXECUTE_PUBLISHED_API =
       "ARM_APIs/api/v1/ARMExecutePublishedAPI";
   static const String API_GET_ENCRYPTED_SECRET_KEY =

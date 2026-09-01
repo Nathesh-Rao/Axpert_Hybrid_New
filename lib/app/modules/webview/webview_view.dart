@@ -1,7 +1,8 @@
 import 'dart:developer';
 
+import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common.dart';
-import 'package:axpert/app/data/services/api_manger.dart';
+import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
@@ -14,8 +15,6 @@ const double _kBottomBarHeight = 64.0;
 
 class WebviewView extends GetView<WebViewController> {
   const WebviewView({super.key});
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -328,6 +327,18 @@ class WebviewView extends GetView<WebViewController> {
               // ),
             ],
           ),
+        ),
+        floatingActionButton: Obx(
+          () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
+              ? FloatingActionButton(
+                  backgroundColor: AppColors.darkBlue,
+                  foregroundColor: Colors.white,
+                  child: Icon(Icons.insert_page_break_sharp),
+                  onPressed: () {
+                    Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                  },
+                )
+              : SizedBox.shrink(),
         ),
       ),
     );

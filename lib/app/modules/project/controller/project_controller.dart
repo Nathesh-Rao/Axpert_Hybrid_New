@@ -1,9 +1,8 @@
 import 'dart:developer';
 
-import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/models/qr_payload.dart';
-import 'package:axpert/app/data/services/api_manger.dart';
-import 'package:axpert/app/data/services/storage_service.dart';
+import 'package:axpert/app/data/services/api/api_manger.dart';
+import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:axpert/app/db/project_database.dart';
 import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/enums/project_enums.dart';
@@ -15,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/common.dart';
+import '../../../data/const/app_const.dart';
 
 // ─────────────────────────────────────────────────────────────────────
 class ProjectController extends GetxController
@@ -154,7 +154,7 @@ class ProjectController extends GetxController
               Expanded(
                 child: Text(
                   message,
-                  style:  GoogleFonts.poppins(
+                  style: GoogleFonts.poppins(
                     color: AppColors.textWhite,
                     fontSize: 13,
                     fontWeight: FontWeight.w400,
@@ -263,7 +263,7 @@ class ProjectController extends GetxController
               ),
             ),
             const SizedBox(width: 12),
-             Expanded(
+            Expanded(
               child: Text(
                 'Enable camera permission to access the QR scanner.',
                 style: GoogleFonts.poppins(
@@ -346,7 +346,7 @@ class ProjectController extends GetxController
             ),
           ),
           const SizedBox(width: 12),
-           Expanded(
+          Expanded(
             child: Text(
               'Invalid QR code. Please scan a valid AXI project QR.',
               style: GoogleFonts.poppins(
@@ -399,7 +399,7 @@ class ProjectController extends GetxController
           Expanded(
             child: Text(
               msg,
-              style:  GoogleFonts.poppins(
+              style: GoogleFonts.poppins(
                 color: AppColors.textWhite,
                 fontSize: 13,
                 height: 1.4,
@@ -433,7 +433,10 @@ class ProjectController extends GetxController
       titleText: const SizedBox.shrink(),
       messageText: Text(
         message,
-        style:  GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 13),
+        style: GoogleFonts.poppins(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
       ),
       snackPosition: SnackPosition.BOTTOM,
       backgroundColor: AppColors.cardBackground,

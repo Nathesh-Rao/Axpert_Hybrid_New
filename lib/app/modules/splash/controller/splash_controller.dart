@@ -1,4 +1,4 @@
-import 'package:axpert/app/data/services/storage_service.dart';
+import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../../core/common.dart';

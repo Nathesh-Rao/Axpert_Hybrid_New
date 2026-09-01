@@ -264,4 +264,26 @@ class ProjectDatabase {
       'This caption is already used by another project.',
     DuplicateReason.none => '',
   };
+
+
+  // ── Get project by exact schema name ──────────────────────────────
+  Future<DbResult<ProjectModel>> getProjectUrlFromProjectName(String projectName) async {
+    try {
+      final db = await _database;
+      
+      final result = await db.rawQuery(
+        'SELECT * FROM $_table WHERE schema_name = ?', 
+        [projectName.trim()]
+      );
+
+      if (result.isNotEmpty) {
+        return DbSuccess(ProjectModel.fromMap(result.first));
+      } else {
+        // Instead of returning a blank Project("", ""), we leverage your new DbResult pattern
+        return DbError('Project not found'); 
+      }
+    } catch (e) {
+      return DbError('Failed to fetch project: $e');
+    }
+  }
 }

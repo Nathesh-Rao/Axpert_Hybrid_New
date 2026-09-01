@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:axpert/app/core/common.dart';
-import 'package:axpert/app/data/services/api_manger.dart';
+import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/modules/auth/controller/auth_controller.dart';
 
 class ForgetPasswordController extends GetxController {

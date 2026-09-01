@@ -8,7 +8,7 @@
 PRODUCT_NAME = axi
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.agile.axi
+PRODUCT_BUNDLE_IDENTIFIER = com.agile.axperthybridnew
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.agile. All rights reserved.
