@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:axpert/app/core/utils/utils.dart';
@@ -14,6 +15,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/common.dart';
+import '../../../modules/offline_form_pages/db/db.dart';
 import '../../models/firebase_message_model.dart';
 import '../api/api_manger.dart';
 import '../location/location_service.dart';
@@ -84,7 +86,12 @@ Future<void> initializeNotification() async {
 }
 
 void onMessageListener(RemoteMessage message) {
-  decodeFirebaseMessage(message);
+  log(message.data.toString(), name: "onMessageListener");
+  if (message.data.containsKey('axm_queueid')) {
+    OfflineDbModule.processCachedSaveQueueFCM(message.data);
+  } else {
+    decodeFirebaseMessage(message);
+  }
 }
 
 @pragma('vm:entry-point')

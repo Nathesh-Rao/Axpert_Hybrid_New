@@ -95,6 +95,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'package:axpert/app/core/utils/app_utility.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/models/auth_user_details_model.dart';
@@ -899,6 +900,14 @@ class ApiManager {
     bool strictAuth = true,
     bool show_errorSnackbar = true,
   }) async {
+    log(
+      'Authorization: Bearer ${StorageService.token ?? ""}',
+      name: "Authorization",
+    );
+    log(
+      'SessionID: Bearer ${StorageService.sessionId ?? ""}',
+      name: "Authorization",
+    );
     final String apiName = url.substring(url.lastIndexOf("/") + 1, url.length);
     const String tag = "[POST_DS]";
 
@@ -1048,6 +1057,14 @@ class ApiManager {
     bool isBearer = false,
     var show_errorSnackbar = true,
   }) async {
+    log(
+      'Authorization: Bearer ${StorageService.token ?? ""}',
+      name: "Authorization",
+    );
+    log(
+      'SessionID: Bearer ${StorageService.sessionId ?? ""}',
+      name: "Authorization",
+    );
     var API_NAME = url.substring(url.lastIndexOf("/") + 1, url.length);
     if (await _connectivity.connectionStatus)
       try {

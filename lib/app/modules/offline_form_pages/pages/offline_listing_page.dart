@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:axpert/app/controller/global_controller.dart';
+import 'package:axpert/app/data/services/storage/storage_service.dart';
 
 import '../../../core/common.dart';
 import '../auto_sync/sync.dart';
@@ -19,12 +20,30 @@ class OfflineListingPage extends GetView<OfflineFormController> {
     });
 
     return Scaffold(
+      drawer: _buildDrawer(context),
+
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Color(0xFFF8F7F4),
         foregroundColor: AppColors.AXMDark,
+        leading: Builder(
+          builder: (ctx) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(ctx).openDrawer();
+              },
+            );
+          },
+        ),
         automaticallyImplyLeading: false,
-        title: Text("Offline Forms"),
+        title: Text(
+          "Offline Forms",
+          style: GoogleFonts.poppins(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ),
       //       floatingActionButton: FloatingActionButton(onPressed: () async{
       //           final String sessionId =
@@ -142,10 +161,14 @@ class OfflineListingPage extends GetView<OfflineFormController> {
         children: [
           SizedBox(height: 20),
           Expanded(
-            child: Obx(
-              () => GridView.builder(
+            child: Obx(() {
+              var sortedList = controller.allPages.where(
+                (p) => p.pageType.toLowerCase() == 'form',
+              );
+
+              return GridView.builder(
                 padding: EdgeInsets.symmetric(horizontal: 10),
-                itemCount: controller.allPages.length,
+                itemCount: sortedList.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   childAspectRatio: 1,
@@ -183,8 +206,8 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                   //   );
                   // }
                 },
-              ),
-            ),
+              );
+            }),
           ),
         ],
       ),
@@ -306,17 +329,20 @@ class OfflineListingPage extends GetView<OfflineFormController> {
   }
 
   Widget _getGridTile(int index) {
-    final page = controller.allPages[index];
-    final rawPage = controller.allRawPages[index];
+    var sortedList = controller.allPages
+        .where((p) => p.pageType.toLowerCase() == 'form')
+        .toList();
+    final page = sortedList[index];
+    // final rawPage = controller.allRawPages[index];
 
     if (page.pageType == "form") {
       // if (page.transId == "inward_entry") {
 
       return FormActionTile(
         icon: Icons.pages,
-        title: rawPage["caption"],
+        title: page.caption,
         onTap: () async {
-          await controller.prepareForm(rawPage).then((_) {
+          await controller.prepareForm(page.schema).then((_) {
             Get.toNamed(Routes.OFFLINE_FORM_PAGE);
           });
           // Get.to(
@@ -325,11 +351,11 @@ class OfflineListingPage extends GetView<OfflineFormController> {
           // );
         },
       );
-      return FormActionTile(
-        icon: Icons.pages,
-        title: rawPage["caption"],
-        onTap: () => controller.loadPage(page),
-      );
+      // return FormActionTile(
+      //   icon: Icons.pages,
+      //   title: rawPage["caption"],
+      //   onTap: () => controller.loadPage(page),
+      // );
       // } else {
       //   return OfflinePageCardCupertino(
       //     page: page,
@@ -350,15 +376,251 @@ class OfflineListingPage extends GetView<OfflineFormController> {
         () => ReportActionTile(
           isDisabled: !controller.isConnected.value,
           icon: Icons.report,
-          title: rawPage["caption"],
+          title: page.caption,
           onTap: () {
-            controller.onReportCardClick(rawPage['transid']);
+            controller.onReportCardClick(page.transId);
           },
         ),
       );
     } else {
       return SizedBox.shrink();
     }
+  }
+
+  Widget _buildDrawer(BuildContext context) {
+    final bg = const Color(0xFFF8F7F4);
+    return Drawer(
+      backgroundColor: bg,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ===== HEADER =====
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Text(
+                "Offline Data Manager",
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.AXMDark,
+                ),
+              ),
+            ),
+            Divider(height: 1, color: Colors.grey.shade300),
+
+            Expanded(
+              child: ListView(
+                children: [
+                  _sectionHeader("Sync"),
+                  _simpleRow(
+                    icon: Icons.sync,
+                    color: AppColors.darkBlue,
+                    title: "Sync All",
+                    subtitle: "Push pending & refetch everything",
+                    onTap: controller.actionSyncAll,
+                  ),
+                  _simpleRow(
+                    icon: Icons.description,
+                    color: Colors.indigo,
+                    title: "Refetch Forms",
+                    subtitle: "Reload offline forms",
+                    onTap: controller.actionRefetchForms,
+                  ),
+                  _simpleRow(
+                    icon: Icons.storage,
+                    color: Colors.teal,
+                    title: "Refetch Datasources",
+                    subtitle: "Reload lookup data",
+                    onTap: controller.actionRefetchDatasources,
+                  ),
+                  _simpleRow(
+                    icon: Icons.unarchive_rounded,
+                    color: Colors.teal,
+                    title: "Export Database",
+                    subtitle: "Backup offline DB for debugging",
+                    onTap: controller.actionExportDatabase,
+                  ),
+                  _simpleRow(
+                    icon: Icons.archive_rounded,
+                    color: Colors.deepOrange,
+                    title: "Import Database",
+                    subtitle: "Restore or overwrite local DB file",
+                    onTap: controller.actionImportDatabase,
+                  ),
+                  // _simpleRow(
+                  //   icon: Icons.restart_alt_rounded,
+                  //   color: Colors.brown,
+                  //   title: "Sync Settings",
+                  //   subtitle: "configure your background sync",
+                  //   onTap: () {
+                  //     // Get.to(() => SyncSettingsScreen());
+                  //   },
+                  // ),
+                  Divider(height: 1, color: Colors.grey.shade300),
+                  _sectionHeader("Queue"),
+
+                  // Obx(() => _simpleRow(
+                  //       icon: Icons.upload_file,
+                  //       color: Colors.deepOrange,
+                  //       title: "Push Pending Uploads",
+                  //       subtitle: "Upload queued data to server",
+                  //       onTap: offlineFormController.actionPushPending,
+                  //       badge: offlineFormController.pendingCount.value != 0
+                  //           ? offlineFormController.pendingCount.value
+                  //               .toString()
+                  //           : null,
+                  //     )),
+                  Obx(
+                    () => _simpleRow(
+                      icon: Icons.upload,
+                      color: Colors.green,
+                      title: "Push Pending records",
+                      subtitle: "Upload pending records to server",
+                      onTap: controller.actionPushPendingByCachedSave,
+                      badge: controller.pendingCount.value != 0
+                          ? controller.pendingCount.value.toString()
+                          : null,
+                    ),
+                  ),
+                  Obx(
+                    () => _simpleRow(
+                      icon: Icons.refresh_sharp,
+                      color: Colors.deepOrange,
+                      title: "Queue status",
+                      subtitle: "Refresh pending queues from server",
+                      onTap: controller.actionRefreshQueues,
+                      badge: controller.pendingQueuesCount.value != 0
+                          ? controller.pendingQueuesCount.value.toString()
+                          : null,
+                    ),
+                  ),
+
+                  (StorageService.userRole ?? '') == 'default'
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Divider(height: 1, color: Colors.grey.shade300),
+                            Row(children: [_sectionHeader("Admin Panel")]),
+                            // _simpleRow(
+                            //   icon: Icons.delete_outline,
+                            //   color: Colors.redAccent,
+                            //   title: "Clear Forms Cache",
+                            //   subtitle: "Remove offline forms",
+                            //   onTap: offlineFormController.actionClearForms,
+                            // ),
+                            // _simpleRow(
+                            //   icon: Icons.delete_sweep,
+                            //   color: Colors.red,
+                            //   title: "Clear Datasources Cache",
+                            //   subtitle: "Remove cached datasources",
+                            //   onTap: offlineFormController
+                            //       .actionClearDatasources,
+                            // ),
+                            _simpleRow(
+                              icon: Icons.clear_all,
+                              color: Colors.brown,
+                              title: "Clear Pending Queue",
+                              subtitle: "Delete all pending submissions",
+                              onTap: controller.actionClearPending,
+                            ),
+
+                            // _simpleRow(
+                            //   icon: Icons.history_edu_rounded,
+                            //   color: Colors.blueGrey,
+                            //   title: "View Audit Logs",
+                            //   subtitle:
+                            //       "Track user actions and system events",
+                            //   onTap: () => Get.to(() => AuditLogPage()),
+                            // ),
+                            Divider(height: 1, color: Colors.grey.shade300),
+                            Row(children: [_sectionHeader("Danger zone")]),
+                            _simpleRow(
+                              icon: Icons.warning,
+                              color: Colors.red.shade900,
+                              title: "Clear ALL Offline Data",
+                              subtitle: "Deletes everything except user",
+                              onTap: controller.actionClearAll,
+                              isDanger: true,
+                            ),
+                          ],
+                        )
+                      : SizedBox.shrink(),
+
+                  // : Center(
+                  //     child:
+                  //         Text(globalVariableController.USER_ROLE.value)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        title.toUpperCase(),
+        style: GoogleFonts.poppins(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppColors.AXMGray,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  Widget _simpleRow({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isDanger = false,
+    bool isDisabled = false,
+    String? badge,
+  }) {
+    final Color iconColor = isDisabled ? Colors.grey.shade400 : color;
+
+    final Color titleColor = isDisabled
+        ? Colors.grey.shade400
+        : (isDanger ? Colors.red : AppColors.AXMDark);
+
+    final Color subTitleColor = isDisabled
+        ? Colors.grey.shade300
+        : AppColors.AXMGray;
+
+    return Badge(
+      isLabelVisible: badge != null,
+      offset: Offset(-50, 0),
+      backgroundColor: AppColors.maroon,
+      label: Text(badge.toString()),
+      textStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 10),
+      child: ListTile(
+        dense: true,
+        visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+        enabled: !isDisabled,
+        leading: Icon(icon, size: 20, color: iconColor),
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+            color: titleColor,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: GoogleFonts.poppins(fontSize: 11, color: subTitleColor),
+        ),
+        trailing: isDisabled ? null : const Icon(Icons.chevron_right, size: 18),
+        onTap: isDisabled ? null : onTap,
+      ),
+    );
   }
 }
 

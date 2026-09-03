@@ -315,31 +315,20 @@ class WebviewView extends GetView<WebViewController> {
               ),
 
               // ── BOTTOM BAR ───────────────────────────────────────────
-              // Obx(
-              //   () => AnimatedContainer(
-              //     duration: const Duration(milliseconds: 300),
-              //     curve: Curves.easeInOut,
-              //     height: controller.isChromeVisible.value
-              //         ? _kBottomBarHeight
-              //         : 0.0,
-              //     child: ClipRect(child: _BottomNavBar(controller: controller)),
-              //   ),
-              // ),
+              Obx(
+                () => AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  height: controller.isChromeVisible.value
+                      ? _kBottomBarHeight
+                      : 0.0,
+                  child: ClipRect(child: _BottomNavBar(controller: controller)),
+                ),
+              ),
             ],
           ),
         ),
-        floatingActionButton: Obx(
-          () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
-              ? FloatingActionButton(
-                  backgroundColor: AppColors.darkBlue,
-                  foregroundColor: Colors.white,
-                  child: Icon(Icons.insert_page_break_sharp),
-                  onPressed: () {
-                    Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
-                  },
-                )
-              : SizedBox.shrink(),
-        ),
+        // floatingActionButton:
       ),
     );
   }
@@ -619,58 +608,85 @@ class _BottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(
-      () => Container(
-        height: _kBottomBarHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        decoration: BoxDecoration(
-          color: controller.isLoading.value ? null : AppColors.white,
-          border: const Border(
-            top: BorderSide(color: AppColors.grey200, width: 0.8),
-          ),
-          // boxShadow: [
-          //   BoxShadow(
-          //     color: AppColors.shadowColor,
-          //     offset: const Offset(0, -2),
-          //     blurRadius: 8,
+    return Container(
+      height: _kBottomBarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        border: const Border(
+          top: BorderSide(color: AppColors.grey200, width: 0.8),
+        ),
+        // boxShadow: [
+        //   BoxShadow(
+        //     color: AppColors.shadowColor,
+        //     offset: const Offset(0, -2),
+        //     blurRadius: 8,
+        //   ),
+        // ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          // Obx(
+          //   () => _NavButton(
+          //     icon: Icons.arrow_back_ios_rounded,
+          //     enabled: controller.canGoBack.value,
+          //     onTap: controller.goBack,
           //   ),
-          // ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            Obx(
-              () => _NavButton(
-                icon: Icons.arrow_back_ios_rounded,
-                enabled: controller.canGoBack.value,
-                onTap: controller.goBack,
+          // ),
+          // Obx(
+          //   () => _NavButton(
+          //     icon: Icons.arrow_forward_ios_rounded,
+          //     enabled: controller.canGoForward.value,
+          //     onTap: controller.goForward,
+          //   ),
+          // ),
+          Obx(
+            () => Spin(
+              animate: controller.isLoading.value,
+              infinite: true,
+              child: _NavButton(
+                rounded: controller.isLoading.value,
+                icon: Icons.refresh_rounded,
+                enabled: true,
+                onTap: controller.reload,
               ),
             ),
-            Obx(
-              () => _NavButton(
-                icon: Icons.arrow_forward_ios_rounded,
-                enabled: controller.canGoForward.value,
-                onTap: controller.goForward,
-              ),
-            ),
-            Obx(
-              () => Spin(
-                animate: controller.isLoading.value,
-                child: _NavButton(
-                  icon: Icons.refresh_rounded,
-                  enabled: true,
-                  onTap: controller.reload,
-                ),
-              ),
-            ),
-            _NavButton(
-              icon: Icons.close_rounded,
-              enabled: true,
-              onTap: controller.closeScreen,
-              activeColor: AppColors.accentRed,
-            ),
-          ],
-        ),
+          ),
+          _NavButton(
+            icon: Icons.close_rounded,
+            enabled: true,
+            onTap: controller.closeScreen,
+            activeColor: AppColors.accentRed,
+          ),
+
+          // _NavButton(
+          //   icon: Icons.,
+          //   enabled: true,
+          //   onTap: controller.closeScreen,
+          //   activeColor: AppColors.darkBlue,
+          // ),
+          Obx(
+            () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
+                ? _NavButton(
+                    icon: Icons.description_outlined,
+                    enabled: true,
+                    onTap: () {
+                      Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                    },
+                    activeColor: AppColors.green,
+                  )
+                // FloatingActionButton(
+                //     backgroundColor: AppColors.darkBlue,
+                //     foregroundColor: Colors.white,
+                //     child: Icon(Icons.insert_page_break_sharp),
+                //     onPressed: () {
+                //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                //     },
+                //   )
+                : SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -679,12 +695,14 @@ class _BottomNavBar extends StatelessWidget {
 class _NavButton extends StatelessWidget {
   final IconData icon;
   final bool enabled;
+  final bool rounded;
   final VoidCallback onTap;
   final Color activeColor;
 
   const _NavButton({
     required this.icon,
     required this.enabled,
+    this.rounded = false,
     required this.onTap,
     this.activeColor = AppColors.textOnLight,
   });
@@ -700,8 +718,9 @@ class _NavButton extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
+            shape: BoxShape.circle,
             color: AppColors.grey100,
-            borderRadius: BorderRadius.circular(12),
+            // borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.grey200, width: 0.8),
           ),
           child: Icon(icon, color: activeColor, size: 18),

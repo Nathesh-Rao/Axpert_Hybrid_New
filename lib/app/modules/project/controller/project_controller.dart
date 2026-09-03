@@ -87,15 +87,15 @@ class ProjectController extends GetxController
       return;
     }
 
-    updateSavingInfoText("Validating Connection");
-    var isConnectionValid = await _validateConnectionName(
-      baseUrl: payload.armUrl,
-      appName: payload.pName,
-    );
-    if (!isConnectionValid) {
-      projectSavingStopped();
-      return;
-    }
+    // updateSavingInfoText("Validating Connection");
+    // var isConnectionValid = await _validateConnectionName(
+    //   baseUrl: payload.armUrl,
+    //   appName: payload.pName,
+    // );
+    // if (!isConnectionValid) {
+    //   projectSavingStopped();
+    //   return;
+    // }
 
     updateSavingInfoText("fetching project details");
     var logoUrl = await getLogoUrl(
@@ -601,15 +601,16 @@ class ProjectController extends GetxController
       return;
     }
 
-    updateSavingInfoText("Validating Connection");
-    var isConnectionValid = await _validateConnectionName(
-      baseUrl: armurl,
-      appName: name,
-    );
-    if (!isConnectionValid) {
-      projectSavingStopped();
-      return;
-    }
+    ///TODO uncomment on prod
+    // updateSavingInfoText("Validating Connection");
+    // var isConnectionValid = await _validateConnectionName(
+    //   baseUrl: armurl,
+    //   appName: name,
+    // );
+    // if (!isConnectionValid) {
+    //   projectSavingStopped();
+    //   return;
+    // }
 
     updateSavingInfoText("Fetching project details");
     var logoUrl = await getLogoUrl(webUrl: url, projectName: name);

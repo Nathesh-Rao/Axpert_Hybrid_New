@@ -10,4 +10,5 @@ class GlobalVariableController extends GetxController {
   var completedDsCountOnStart = 0.obs;
 
   var OFFLINE_FORMS_COUNT = 0.obs;
+  var USER_ROLE = ''.obs;
 }

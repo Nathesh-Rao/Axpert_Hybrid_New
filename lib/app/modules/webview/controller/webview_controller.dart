@@ -63,7 +63,7 @@ class WebViewController extends GetxController {
   void onInit() {
     preData = {};
     isAxpertConnectEstablished = false;
-    _initializeWebSession();
+
     GlobalVariableController.to.OFFLINE_FORMS_COUNT.listen((count) {
       if (count == 0) {
         // bottomIndex.value = 0;
@@ -76,6 +76,7 @@ class WebViewController extends GetxController {
   void onReady() {
     updateUserDetaiils();
     getBiometricStatus();
+    _initializeWebSession();
     _startPostLoginSync();
     super.onReady();
   }
@@ -111,21 +112,21 @@ class WebViewController extends GetxController {
     }
   }
 
-  void loadData() {
-    String url = preData['website'] ?? "";
-    if (url.isNotEmpty) {
-      print("widget data: ${preData['isFirstLoad']}");
-      if (preData['isFirstLoad']) {
-        //TODO successful login
-        ApiManager.instance.postHybridNotificationInfoToServer(
-          firebaseToken: AppConst.FIREBASE_TOKEN,
-          guid: AppConst.GUID,
-          deviceId: AppConst.DEVICE_ID,
-        );
-      }
-      openWebView(url: url);
-    }
-  }
+  // void loadData() {
+  //   String url = preData['website'] ?? "";
+  //   if (url.isNotEmpty) {
+  //     print("widget data: ${preData['isFirstLoad']}");
+  //     if (preData['isFirstLoad']) {
+  //       //TODO successful login
+  //       ApiManager.instance.postHybridNotificationInfoToServer(
+  //         firebaseToken: AppConst.FIREBASE_TOKEN,
+  //         guid: AppConst.GUID,
+  //         deviceId: AppConst.DEVICE_ID,
+  //       );
+  //     }
+  //     openWebView(url: url);
+  //   }
+  // }
 
   final List<String> imageExtensions = [
     'jpg',
@@ -353,6 +354,7 @@ class WebViewController extends GetxController {
     //   if (switchPage) currentIndex.value = 1;
     // }
 
+    // currentUrl.value = url;
     currentUrl.value = url;
     isSessionExpired.value = false;
     print("WebView URL loaded: $url");

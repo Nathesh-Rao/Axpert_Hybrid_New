@@ -84,7 +84,7 @@ class OfflineFormController extends GetxController {
     page = OfflineFormPageModel.fromJson(newSchema);
     schema = newSchema;
     // 1. clear old stuff
-    // resetForm();
+    resetForm();
     // scrollCtrl.animateTo(
     //   0,
     //   duration: const Duration(milliseconds: 500),
@@ -113,6 +113,54 @@ class OfflineFormController extends GetxController {
 
     isFormPreparing.value = false;
     update();
+  }
+
+  Future<void> onPopCalled() async {
+    final bool confirm =
+        await Get.dialog(
+          AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            backgroundColor: Colors.white,
+            title: const Text(
+              "Exit Form?",
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+            ),
+            content: const Text(
+              "Unsaved changes will be lost.\nAre you sure you want to go back?",
+              style: TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(result: false),
+                child: Text(
+                  "Cancel",
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Get.back(result: true),
+                child: const Text(
+                  "Exit",
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (confirm) {
+      Get.back();
+    }
   }
 
   void _buildControllersFromSchema() {
@@ -271,6 +319,111 @@ class OfflineFormController extends GetxController {
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
 
+  Future<void> onFormSubmit() async {
+    if (isLoading.value) return;
+
+    // if (!await validateForm()) {
+    //   Get.snackbar(
+    //     "Missing Fields",
+    //     "Please fill all required fields before proceeding.",
+    //     backgroundColor: AppColors.accentRed,
+    //     colorText: Colors.white,
+    //     snackPosition: SnackPosition.BOTTOM,
+    //     margin: const EdgeInsets.all(12),
+    //     duration: const Duration(seconds: 2),
+    //   );
+    //   return;
+    // }
+    final Map<String, dynamic> mainPayload = generateSubmitPayloadCachedSave();
+    log(mainPayload.toString(), name: "mainpayload");
+    final int mainRecId = await OfflineDbModule.savePayloadForQueue(
+      payload: mainPayload,
+    );
+
+    if (mainRecId == -1) {
+      throw Exception("Failed to save main form payload to queue.");
+    }
+    // await startNewTransaction();
+    isLoading.value = false;
+    errors.clear();
+    // submitStatus.value = "";
+    Get.back();
+
+    await refreshPendingCount();
+  }
+
+  Future<void> startNewTransaction() async {
+    log("start new transaction clicked");
+    try {
+      isFormPreparing.value = true;
+
+      // Clear text controllers
+      for (final controller in textCtrls.values) {
+        controller.clear();
+      }
+
+      // Clear dropdown values
+      dropdownCtrls.clear();
+
+      // Clear form errors
+      errors.clear();
+
+      // Clear sample/grid data
+
+      // Clear runtime JSONs
+      // mainFormJson.clear();
+      dc1SubmitFormJson.clear();
+
+      // Dispose old controllers
+      for (final controller in textCtrls.values) {
+        controller.dispose();
+      }
+
+      textCtrls.clear();
+
+      // Rebuild everything from schema
+      await prepareForm(schema);
+
+      // Scroll to top
+      if (scrollCtrl.hasClients) {
+        scrollCtrl.jumpTo(0);
+      }
+
+      update();
+    } catch (e, st) {
+      LogService.writeLog(message: "startNewTransaction error => $e\n$st");
+    } finally {
+      isFormPreparing.value = false;
+    }
+  }
+
+  Map<String, dynamic> generateSubmitPayloadCachedSave() {
+    final Map<String, dynamic> dc1Data = {};
+    final List fields = schema["fields"];
+
+    for (final f in fields) {
+      final String name = f["fld_name"];
+      final String type = f["fld_type"];
+
+      dynamic value;
+      if (type == "dd") {
+        value = dropdownCtrls[name]?.value ?? "";
+      } else {
+        value = textCtrls[name]?.text.trim() ?? "";
+      }
+      dc1Data[name] = value.toString();
+    }
+
+    return {
+      "transid": page.transId,
+      "axm_recid": "0", // placeholder — replaced by savePayloadForQueue()
+      "action": "create",
+      "submitdata": {
+        "dc1": {"row1": dc1Data},
+      },
+    };
+  }
+
   Future<void> refreshPendingCount() async {
     try {
       int count = await OfflineDbModule.getPendingCount();
@@ -341,6 +494,7 @@ class OfflineFormController extends GetxController {
       LogService.writeLog(message: "$tag[STACK] $st");
     } finally {
       isLoading.value = false;
+      refreshPendingCount();
     }
   }
 
@@ -418,7 +572,41 @@ class OfflineFormController extends GetxController {
     update([field.fldName]);
   }
 
-  bool validateForm() {
+  Future<bool> validateForm() async {
+    errors.clear();
+
+    final List fields = schema["fields"];
+
+    for (final f in fields) {
+      final String name = f["fld_name"];
+      final String label = f["fld_caption"];
+      final String allowEmpty = f["allowempty"] ?? "T";
+      final String type = f["fld_type"];
+
+      if (allowEmpty == "F") {
+        String value = "";
+
+        if (type == "dd") {
+          value = dropdownCtrls[name]?.value ?? "";
+        } else {
+          value = textCtrls[name]?.text.trim() ?? "";
+        }
+
+        if (value.isEmpty) {
+          errors[name] = "$label is required";
+        }
+      }
+
+      // if (name == 'ub_ge_no') {
+      //   await validateUbgeNo(
+      //       textCtrls[name]!, textCtrls[name]?.text ?? '', name);
+      //   // errors[name] = "duplicate ubge no, please update";
+      // }
+    }
+    return errors.isEmpty;
+  }
+
+  bool validateFormOld() {
     bool isFormValid = true;
 
     for (final field in fieldMap.values) {
@@ -459,6 +647,7 @@ class OfflineFormController extends GetxController {
       update([field.fldName]);
     }
 
+    log(fieldMap.toString(), name: "fieldMap");
     return isFormValid;
   }
 
@@ -2087,10 +2276,13 @@ class OfflineFormController extends GetxController {
       final Map<String, dynamic> payload = {
         "ARMSessionId": StorageService.sessionId ?? '',
       };
+      var url = await AppConst.getFullARMUrl(ApiEndpoints.API_VALIDATE_SESSION);
+      log(payload.toString(), name: "validateSession");
+      log(url, name: "validateSession");
 
       final dynamic res = await ApiManager.instance.postDsToServer(
         strictAuth: false,
-        url: await AppConst.getFullARMUrl(ApiEndpoints.API_VALIDATE_SESSION),
+        url: url,
         body: jsonEncode(payload),
         isBearer: true,
         show_errorSnackbar: false,
@@ -2098,6 +2290,7 @@ class OfflineFormController extends GetxController {
       await Future.delayed(Duration(seconds: 2));
       bool isSuccess = false;
       if (res != null && res.isNotEmpty) {
+        log(res.toString(), name: "validateSession");
         final decoded = jsonDecode(res);
         if (decoded is Map && decoded['result']['success'] == true) {
           isSuccess = true;

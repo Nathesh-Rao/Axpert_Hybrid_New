@@ -8356,6 +8356,7 @@ class OfflineDbModule {
         url: url,
         body: jsonEncode(requestBody),
         isBearer: true,
+        strictAuth: true,
       );
 
       LogService.writeLog(
@@ -8369,6 +8370,9 @@ class OfflineDbModule {
         return null;
       }
       //TODO do the error handling ASAP
+      if (ApiManager.instance.isDsErrorResponse(responseStr)) {
+        return null;
+      }
       final decoded = jsonDecode(responseStr.toString());
       if (decoded is! Map<String, dynamic>) {
         LogService.writeLog(

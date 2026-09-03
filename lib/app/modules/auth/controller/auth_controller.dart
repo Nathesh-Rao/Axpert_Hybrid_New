@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:axpert/app/core/common.dart';
 import 'package:axpert/app/core/common/methods.dart';
@@ -364,7 +365,7 @@ class AuthController extends GetxController {
       "SessionId": getGUID(),
       "Globalvars": false,
     };
-
+    log(signInBody.toString(), name: "callSignInAPI body");
     if (isDuplicate_session) signInBody["ClearPreviousSession"] = true;
     if (isOTP_auth.value) signInBody["OtpAuth"] = "T";
 
@@ -376,12 +377,15 @@ class AuthController extends GetxController {
 
     switch (result) {
       case ApiSuccess(data: final response):
+        log(response.rawData.toString(), name: "callSignInAPI");
         if (response.isSuccess) {
           StorageService.storeLastLoginData(projectName, signInBody);
 
           if (response.message == "Login Successful.") {
             // showDialog_changePassword();
-
+            StorageService.saveUserRole(
+              response.rawData["role"].toString().toLowerCase(),
+            );
             await OfflineDbModule.saveUser(
               projectName: currentProjectName.value,
               username: userNameController.text.toString().trim(),

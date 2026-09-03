@@ -1,3 +1,4 @@
+import 'package:axpert/app/controller/global_controller.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -18,64 +19,83 @@ class OfflineFormPage extends GetView<OfflineFormController> {
     final List<OfflineFormFieldModel> fields = List.from(
       controller.page.fields,
     );
-    return Scaffold(
-      backgroundColor: Colors.white,
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: WidgetLoginButton(
-          loading: false,
-          icon: Icon(Icons.donut_small_outlined),
-          label: "Submit",
-          visible: true,
-          onPressed: () {},
-          color: AppColors.darkBlue,
-        ),
-      ),
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text(controller.page.caption),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            onPressed: () {
-              controller.validateForm();
-            },
-            icon: Icon(Icons.check_circle),
-          ),
-        ],
-      ),
+    return PopScope(
+      onPopInvokedWithResult: (bool dp, _) async {
+        if (dp) return;
 
-      // body: SingleChildScrollView(
-      //   child: Padding(
-      //     padding: EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-      //     child: Column(
-      //       spacing: 15,
-      //       // children: controller.fieldMap.values
-      //       //     .map((f) => OfflineFormField(field: f))
-      //       //     .toList(),
-      //       children: [
-      //         if (controller.page.attachments)
-      //           const OfflineAttachmentsSection(),
-      //         ...controller.fieldMap.values
-      //             .map((f) => OfflineFormField(field: f))
-      //             .toList(),
-      //       ],
-      //     ),
-      //   ),
-      // ),
-      body: ListView(
-        children: fields
-            .map((field) => _buildFieldFromSchema(context, field))
-            .toList(),
+        await controller.onPopCalled();
+      },
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        bottomNavigationBar: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: WidgetLoginButton(
+            loading: false,
+            icon: Icon(Icons.donut_small_outlined),
+            label: "Submit",
+            visible: true,
+            onPressed: controller.onFormSubmit,
+            color: AppColors.darkBlue,
+          ),
+        ),
+        appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          // leading: Icon(Icons.more_vert_outlined),
+          title: Text(
+            controller.page.caption,
+            style: GoogleFonts.poppins(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              onPressed: () {
+                controller.validateForm();
+              },
+              icon: Icon(Icons.restore),
+            ),
+          ],
+        ),
+
+        // body: SingleChildScrollView(
+        //   child: Padding(
+        //     padding: EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+        //     child: Column(
+        //       spacing: 15,
+        //       // children: controller.fieldMap.values
+        //       //     .map((f) => OfflineFormField(field: f))
+        //       //     .toList(),
+        //       children: [
+        //         if (controller.page.attachments)
+        //           const OfflineAttachmentsSection(),
+        //         ...controller.fieldMap.values
+        //             .map((f) => OfflineFormField(field: f))
+        //             .toList(),
+        //       ],
+        //     ),
+        //   ),
+        // ),
+        body: GetBuilder(
+          init: controller,
+          builder: (c) => ListView(
+            padding: EdgeInsets.only(left: 15.w, right: 15.w, bottom: 30.w),
+            children: fields
+                .map((field) => _buildFieldFromSchema(context, field))
+                .toList(),
+          ),
+        ),
+        // floatingActionButton: controller.page.attachments
+        //     ? FloatingActionButton(
+        //         backgroundColor: AppColors.blue9,
+        //         onPressed: controller.pickAttachment,
+        //         child: Icon(CupertinoIcons.paperclip),
+        //       )
+        //     : null,
       ),
-      floatingActionButton: controller.page.attachments
-          ? FloatingActionButton(
-              backgroundColor: AppColors.blue9,
-              onPressed: controller.pickAttachment,
-              child: Icon(CupertinoIcons.paperclip),
-            )
-          : null,
     );
   }
 
@@ -196,7 +216,12 @@ class OfflineFormPage extends GetView<OfflineFormController> {
           readOnly: readOnly,
           controller: ctrl,
           focusNode: focusNode,
-          decoration: _inputDecoration(label, hasError),
+          style: GoogleFonts.poppins(
+            fontSize: 15,
+            color: AppColors.AXMDark,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: _inputDecoration(label, hasError, readOnly),
         );
       }),
     );
@@ -213,13 +238,19 @@ class OfflineFormPage extends GetView<OfflineFormController> {
       label: label,
       mandatory: mandatory,
       errorKey: key,
+      readOnly: readOnly,
       child: Obx(() {
         final hasError = controller.errors.containsKey(key);
         return TextFormField(
           readOnly: readOnly,
           controller: ctrl,
+          style: GoogleFonts.poppins(
+            fontSize: 15,
+            color: AppColors.AXMDark,
+            fontWeight: FontWeight.w500,
+          ),
           keyboardType: TextInputType.number,
-          decoration: _inputDecoration(label, hasError),
+          decoration: _inputDecoration(label, hasError, readOnly),
           onChanged: (v) {
             // if (key == "bags_sample") {
             //   controller.onBagsToSampleChanged(v);
@@ -302,9 +333,15 @@ class OfflineFormPage extends GetView<OfflineFormController> {
             isEnabled
                 ? "Select $label"
                 : "Select ${dependencyLabel(key)} first",
-            style: TextStyle(
+            style: GoogleFonts.poppins(
+              fontSize: 12,
               color: isEnabled ? Colors.grey : Colors.grey.shade400,
             ),
+          ),
+          style: GoogleFonts.poppins(
+            fontSize: 15,
+            color: AppColors.AXMDark,
+            fontWeight: FontWeight.w500,
           ),
           icon: Icon(
             Icons.expand_more,
@@ -318,7 +355,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
             );
           }).toList(),
           onChanged: isEnabled ? (v) => value.value = v.toString() : null,
-          decoration: _inputDecoration(label, hasError),
+          decoration: _inputDecoration(label, hasError, isEnabled),
         );
       }),
     );
@@ -357,7 +394,12 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         return TextFormField(
           controller: ctrl,
           readOnly: readOnly,
-          decoration: _inputDecoration(label, hasError),
+          style: GoogleFonts.poppins(
+            fontSize: 15,
+            color: AppColors.AXMDark,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: _inputDecoration(label, hasError, readOnly),
           onTap: () async {
             final d = await showDatePicker(
               context: context,
@@ -400,7 +442,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         return TextFormField(
           controller: ctrl,
           readOnly: readOnly,
-          decoration: _inputDecoration(label, hasError),
+          decoration: _inputDecoration(label, hasError, readOnly),
           onTap: () async {
             final now = DateTime.now();
             final d = await showDatePicker(
@@ -439,7 +481,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         return TextFormField(
           controller: ctrl,
           readOnly: readOnly,
-          decoration: _inputDecoration(label, hasError),
+          decoration: _inputDecoration(label, hasError, readOnly),
           onTap: () async {
             final now = TimeOfDay.now();
 
@@ -495,7 +537,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         return TextFormField(
           controller: ctrl,
           readOnly: readOnly,
-          decoration: _inputDecoration(label, hasError),
+          decoration: _inputDecoration(label, hasError, readOnly),
           onTap: readOnly
               ? null // No picker when read-only
               : () async {
@@ -540,7 +582,11 @@ class OfflineFormPage extends GetView<OfflineFormController> {
     );
   }
 
-  static InputDecoration _inputDecoration(String label, bool hasError) {
+  static InputDecoration _inputDecoration(
+    String label,
+    bool hasError,
+    bool readOnly,
+  ) {
     return InputDecoration(
       hintText: "Enter $label",
       hintStyle: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade500),
@@ -548,6 +594,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
       fillColor: const Color(0xFFF1F5F9),
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(
@@ -562,10 +609,21 @@ class OfflineFormPage extends GetView<OfflineFormController> {
           width: 1.2,
         ),
       ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : Colors.grey,
+          width: 1.2,
+        ),
+      ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(
-          color: hasError ? Colors.red : const Color(0xFF2563EB),
+          color: hasError
+              ? Colors.red
+              : readOnly
+              ? Colors.grey
+              : const Color(0xFF2563EB),
           width: 1.2,
         ),
       ),
@@ -576,6 +634,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
 class _RowWithField extends GetView<OfflineFormController> {
   final String label;
   final bool mandatory;
+  final bool readOnly;
   final Widget child;
   final Widget? trailing;
   final String errorKey;
@@ -584,6 +643,7 @@ class _RowWithField extends GetView<OfflineFormController> {
     required this.child,
     required this.errorKey,
     this.mandatory = false,
+    this.readOnly = false,
     this.trailing,
   });
 
@@ -601,23 +661,49 @@ class _RowWithField extends GetView<OfflineFormController> {
         children: [
           Row(
             children: [
-              if (mandatory)
+              if (readOnly)
+                if (readOnly)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(
+                      Icons.lock,
+                      color: mandatory ? Colors.red : AppColors.AXMDark,
+                      size: 10.sp,
+                    ),
+                  ),
+              if (!readOnly)
                 Container(
                   width: 6,
                   height: 6,
                   margin: const EdgeInsets.only(right: 8),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
+                  decoration: BoxDecoration(
+                    color: mandatory ? Colors.red : AppColors.AXMDark,
                     shape: BoxShape.circle,
                   ),
                 ),
+
+              // if (readOnly)
+              //   Container(
+              //     width: 6,
+              //     height: 6,
+              //     margin: const EdgeInsets.only(right: 8),
+              //     decoration: const BoxDecoration(
+              //       color: AppColors.AXMGray,
+              //       shape: BoxShape.circle,
+              //     ),
+              //   ),
               Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Row(
+                  spacing: 15.w,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               ?trailing,

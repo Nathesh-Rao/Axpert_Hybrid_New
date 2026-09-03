@@ -11,6 +11,7 @@ class StorageService {
   static const _keyLastSelectedProject = 'last_selected_project';
   static const _keyLastLoginData = 'last_login_data';
   static const _keyToken = 'auth_token';
+  static const _userRole = 'user_role';
   static const _keySessionId = 'arm_session_id';
   static const _keyUserName = 'user_name';
   static const _keyNickName = 'nick_name';
@@ -39,6 +40,7 @@ class StorageService {
   static String? get nickName => _prefs.getString(_keyNickName);
   static String? get projectName => _prefs.getString(_projectName);
   static String? get armUrl => _prefs.getString(_armUrl);
+  static String? get userRole => _prefs.getString(_userRole);
   static String? get webUrl => _prefs.getString(_webUrl);
   static String? get fcmid => _prefs.getString(_fcmid);
   static bool? get isLogEnabled => _prefs.getBool(_isLogEnabled);
@@ -131,6 +133,10 @@ class StorageService {
 
     allData[projectName] = body;
     await _prefs.setString(_keyLastLoginData, jsonEncode(allData));
+  }
+
+  static Future<void> saveUserRole(String role) async {
+    await _prefs.setString(_userRole, role);
   }
 
   static Map<String, dynamic>? retrieveLastLoginData(String projectName) {
