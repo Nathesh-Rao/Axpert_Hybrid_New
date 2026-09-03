@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../../core/common.dart';
 import '../auto_sync/sync.dart';
@@ -44,6 +45,17 @@ class OfflineListingPage extends GetView<OfflineFormController> {
             fontWeight: FontWeight.w500,
           ),
         ),
+
+        actions: [
+          IconButton(
+            onPressed: Get.back,
+            icon: Icon(
+              CupertinoIcons.clear_circled_solid,
+              color: AppColors.AXMGray,
+            ),
+            iconSize: 18.sp,
+          ),
+        ],
       ),
       //       floatingActionButton: FloatingActionButton(onPressed: () async{
       //           final String sessionId =

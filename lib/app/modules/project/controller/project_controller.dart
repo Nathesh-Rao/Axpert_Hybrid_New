@@ -70,32 +70,49 @@ class ProjectController extends GetxController
   }
 
   // ── QR detected callback (pass this to QrScannerWidget) ──────────
-  Future<void> onQRDetected(String raw) async {
+  Future<bool> onQRDetected(String raw) async {
     // 1. Parse & validate
     projectSavingStarted();
     final payload = QrPayload.tryParse(raw);
     if (payload == null) {
       HapticManager.error();
       _showInvalidQrSnackbar();
-      return;
+      currentTileState.value = ProjectAddingState.defaultState;
+      return false;
     }
 
+    DuplicateReason dReason = await ProjectDatabase.instance.checkDuplicate(
+      url: payload.pUrl,
+      armurl: payload.armUrl,
+      schemaName: payload.pName,
+      caption: payload.pName,
+    );
+
+    if (dReason != DuplicateReason.none) {
+      currentTileState.value = ProjectAddingState.defaultState;
+      _showErrorSnackbar(_getDuplicateReason(dReason));
+      projectSavingStopped();
+      return false;
+    }
     updateSavingInfoText("Validating ARM");
     var isProjectValid = await _checkArmStatus(armUrl: payload.armUrl);
     if (!isProjectValid) {
       projectSavingStopped();
-      return;
+      currentTileState.value = ProjectAddingState.defaultState;
+
+      return false;
     }
 
-    // updateSavingInfoText("Validating Connection");
-    // var isConnectionValid = await _validateConnectionName(
-    //   baseUrl: payload.armUrl,
-    //   appName: payload.pName,
-    // );
-    // if (!isConnectionValid) {
-    //   projectSavingStopped();
-    //   return;
-    // }
+    updateSavingInfoText("Validating Connection");
+    var isConnectionValid = await _validateConnectionName(
+      baseUrl: payload.armUrl,
+      appName: payload.pName,
+    );
+    if (!isConnectionValid) {
+      projectSavingStopped();
+      currentTileState.value = ProjectAddingState.defaultState;
+      return false;
+    }
 
     updateSavingInfoText("fetching project details");
     var logoUrl = await getLogoUrl(
@@ -131,6 +148,8 @@ class ProjectController extends GetxController
 
       case DbError(:final message):
         // Duplicate or other DB error — show message, stay on QR screen
+        currentTileState.value = ProjectAddingState.defaultState;
+
         HapticManager.error();
         Get.snackbar(
           '',
@@ -182,6 +201,17 @@ class ProjectController extends GetxController
         );
     }
     projectSavingStopped();
+    return true;
+  }
+
+  String _getDuplicateReason(DuplicateReason r) {
+    return switch (r) {
+      DuplicateReason.urlAndName =>
+        'Duplicate Project\nA project with this URL and name already exists.',
+      DuplicateReason.captionExists =>
+        'Duplicate Caption\nThis caption is already used by another project.',
+      DuplicateReason.none => '',
+    };
   }
   // ── Delete project ────────────────────────────────────────────────
 
@@ -594,23 +624,44 @@ class ProjectController extends GetxController
       return;
     }
 
-    updateSavingInfoText("Validating ARM");
-    var isProjectValid = await _checkArmStatus(armUrl: armurl);
-    if (!isProjectValid) {
+    DuplicateReason dReason = await ProjectDatabase.instance.checkDuplicate(
+      url: url,
+      armurl: armurl,
+      schemaName: name,
+      caption: name,
+    );
+
+    if (dReason != DuplicateReason.none) {
+      currentTileState.value = ProjectAddingState.defaultState;
+      _showErrorSnackbar(_getDuplicateReason(dReason));
+      // editingProject.value = null;
+
       projectSavingStopped();
       return;
     }
 
+    updateSavingInfoText("Validating ARM");
+    var isProjectValid = await _checkArmStatus(armUrl: armurl);
+    if (!isProjectValid) {
+      projectSavingStopped();
+      // currentTileState.value = ProjectAddingState.defaultState;
+      // editingProject.value = null;
+
+      return;
+    }
+
     ///TODO uncomment on prod
-    // updateSavingInfoText("Validating Connection");
-    // var isConnectionValid = await _validateConnectionName(
-    //   baseUrl: armurl,
-    //   appName: name,
-    // );
-    // if (!isConnectionValid) {
-    //   projectSavingStopped();
-    //   return;
-    // }
+    updateSavingInfoText("Validating Connection");
+    var isConnectionValid = await _validateConnectionName(
+      baseUrl: armurl,
+      appName: name,
+    );
+    if (!isConnectionValid) {
+      projectSavingStopped();
+      // currentTileState.value = ProjectAddingState.defaultState;
+      // editingProject.value = null;
+      return;
+    }
 
     updateSavingInfoText("Fetching project details");
     var logoUrl = await getLogoUrl(webUrl: url, projectName: name);
@@ -729,7 +780,7 @@ class ProjectController extends GetxController
     ApiResult result = await ApiManager.instance.checkArmStatus(armUrl);
 
     if (result is ApiError) {
-      _showErrorSnackbar(result.message);
+      _showErrorSnackbar("ARM Status Failed\n${result.message}");
       return false;
     } else {
       return true;
@@ -745,7 +796,7 @@ class ProjectController extends GetxController
       appName: appName,
     );
     if (result is ApiError) {
-      _showErrorSnackbar(result.message);
+      _showErrorSnackbar("Connection Name Failed\n${result.message}");
       return false;
     } else {
       return true;

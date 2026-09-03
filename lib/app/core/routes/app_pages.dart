@@ -71,7 +71,7 @@ class AppPages {
       name: Routes.OFFLINE_LISTING_PAGE,
       page: () => OfflineListingPage(),
       // binding: WebviewBindings(),
-      transition: Transition.rightToLeft,
+      transition: Transition.downToUp,
     ),
     GetPage(
       name: Routes.OFFLINE_FORM_PAGE,

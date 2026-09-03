@@ -404,4 +404,12 @@ class StorageService {
 
     await _prefs.setString(_keyNotificationUnread, jsonEncode(oldNotifyNum));
   }
+
+  static Future<void> updateSessionAndToken({
+    required String token,
+    required String session,
+  }) async {
+    await _prefs.setString(_keyToken, token);
+    await _prefs.setString(_keySessionId, session);
+  }
 }

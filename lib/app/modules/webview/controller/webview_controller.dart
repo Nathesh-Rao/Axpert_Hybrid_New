@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer';
 import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common/methods.dart';
@@ -23,6 +24,7 @@ class WebViewController extends GetxController {
 
   final RxBool canGoBack = false.obs;
   final RxBool canGoForward = false.obs;
+  final RxBool isSessionRefetched = false.obs;
 
   // ── Chrome visibility ───────────────────────────────────────────
   bool isAxpertConnectEstablished = false;
@@ -63,7 +65,7 @@ class WebViewController extends GetxController {
   void onInit() {
     preData = {};
     isAxpertConnectEstablished = false;
-
+    isSessionRefetched.value = false;
     GlobalVariableController.to.OFFLINE_FORMS_COUNT.listen((count) {
       if (count == 0) {
         // bottomIndex.value = 0;
@@ -79,6 +81,10 @@ class WebViewController extends GetxController {
     _initializeWebSession();
     _startPostLoginSync();
     super.onReady();
+  }
+
+  void tempLoadUrl() {
+    _initializeWebSession();
   }
 
   void _startPostLoginSync() async {
@@ -157,7 +163,7 @@ class WebViewController extends GetxController {
     var url = await AppConst.getFullWebUrl(
       "aspx/mainnew.aspx?authKey=AXPERT-$sessionid",
     );
-
+    // var url = 'https://google.com/';
     currentUrl.value = '';
     openWebView(url: url);
   }
@@ -358,6 +364,7 @@ class WebViewController extends GetxController {
     currentUrl.value = url;
     isSessionExpired.value = false;
     print("WebView URL loaded: $url");
+    print("WebView CURRENT-URL loaded: ${currentUrl.value}");
     if (!await connectTOAxpert()) return;
     await _webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
@@ -553,6 +560,160 @@ class WebViewController extends GetxController {
   // ────────────────────────────────────────────────────────────────
   // invalid session
   // ────────────────────────────────────────────────────────────────
+
+  Future<void> refetchSession() async {
+    if (isSessionRefetched.value) return;
+    try {
+      var token = await getArmTokenAndSession(key: 'ARM_Token');
+      var session = await getArmTokenAndSession(key: 'ARM_SessionId');
+      if (token != null && session != null) {
+        var decodedToken = jsonDecode(token)['d'] ?? '';
+        var decodedSession = jsonDecode(session)['d'] ?? '';
+        LogService.writeLog(
+          message:
+              "refetchSession - Session: $decodedSession\n"
+              "refetchSession - Token: $decodedToken",
+        );
+
+        await StorageService.updateSessionAndToken(
+          token: decodedToken,
+          session: decodedSession,
+        );
+        isSessionRefetched.value = true;
+      } else {
+        ApiManager.instance.showErrorSnack(
+          title: "Session not updated",
+          message:
+              "Token or Session id returned null while refetching credentials",
+          show_errorSnackbar: true,
+        );
+      }
+    } catch (e) {
+      ApiManager.instance.showErrorSnack(
+        title: "Session not updated",
+        message: e.toString(),
+        show_errorSnackbar: true,
+      );
+      isSessionRefetched.value = false;
+    }
+  }
+
+  // Future<String?> getArmTokenAndSession({required String key}) async {
+  //   final completer = Completer<String?>();
+
+  //   // Register Flutter <-> JavaScript bridge
+
+  //   webViewController?.addJavaScriptHandler(
+  //     handlerName: 'getArmTokenResult',
+
+  //     callback: (args) {
+  //       if (!completer.isCompleted) {
+  //         final value = args.isNotEmpty ? args[0] : null;
+
+  //         print('ARM_Token response: $value');
+
+  //         completer.complete(value?.toString());
+  //       }
+
+  //       return null;
+  //     },
+  //   );
+
+  //   await webViewController?.evaluateJavascript(
+  //     source:
+  //         '''
+
+  //     try {
+
+  //       getSession('$key', function(data) {
+
+  //         window.flutter_inappwebview.callHandler(
+
+  //           'getArmTokenResult',
+
+  //           data
+
+  //         );
+
+  //       });
+
+  //     } catch (e) {
+
+  //       window.flutter_inappwebview.callHandler(
+
+  //         'getArmTokenResult',
+
+  //         'ERROR: ' + e.toString()
+
+  //       );
+
+  //     }
+
+  //   ''',
+  //   );
+
+  //   try {
+  //     return await completer.future.timeout(
+  //       const Duration(seconds: 10),
+
+  //       onTimeout: () => null,
+  //     );
+  //   } catch (e) {
+  //     print('Error getting ARM_Token: $e');
+
+  //     return null;
+  //   }
+  // }
+
+  Future<String?> getArmTokenAndSession({required String key}) async {
+    final completer = Completer<String?>();
+
+    webViewController?.addJavaScriptHandler(
+      handlerName: 'getArmTokenResult',
+      callback: (args) {
+        if (!completer.isCompleted) {
+          final value = args.isNotEmpty ? args[0] : null;
+
+          print('ARM_$key response: $value');
+
+          completer.complete(value?.toString());
+        }
+
+        return null;
+      },
+    );
+
+    await webViewController?.evaluateJavascript(
+      source:
+          '''
+      try {
+        getSession('$key', function(data) {
+          window.flutter_inappwebview.callHandler(
+            'getArmTokenResult',
+            JSON.stringify(data)
+          );
+        });
+      } catch (e) {
+        window.flutter_inappwebview.callHandler(
+          'getArmTokenResult',
+          JSON.stringify({
+            "error": e.toString()
+          })
+        );
+      }
+    ''',
+    );
+
+    try {
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => null,
+      );
+    } catch (e) {
+      print('Error getting ARM_$key: $e');
+      return null;
+    }
+  }
 
   Future<bool> performBackButtonClick() async {
     var tag = "performBackButtonClick";

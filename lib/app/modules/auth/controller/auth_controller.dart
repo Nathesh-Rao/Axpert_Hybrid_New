@@ -520,8 +520,8 @@ class AuthController extends GetxController {
     // Get.to(Routes.WEBVIEW);
     // webviewController.openWebView(url: url);
     // WebViewController.open(url: url);
-
-    Get.toNamed(Routes.WEBVIEW);
+    // isPWD_auth.value = false;
+    await Get.toNamed(Routes.WEBVIEW);
   }
 
   Future<void> _callApiForMobileNotification() async {

@@ -217,6 +217,7 @@ class ApiManager {
   }
 
   Map<String, dynamic> _handleResponse(http.Response response) {
+    log(response.body);
     if (response.statusCode == 200) {
       var decoded = jsonDecode(response.body);
       if (decoded is String) {
@@ -289,7 +290,7 @@ class ApiManager {
       final data = await _getFromServer(
         baseUrl + ApiEndpoints.API_GET_APPSTATUS,
       );
-
+      log(data.toString());
       final dataString = data.toString().toLowerCase();
 
       if (dataString.isNotEmpty &&
@@ -323,7 +324,7 @@ class ApiManager {
 
     try {
       final data = await _postToServer(url, body: body);
-
+      log(data.toString());
       final resultObj = data["result"] as Map<String, dynamic>?;
       final message = resultObj?["message"]?.toString().toLowerCase() ?? "";
       final dataObj = resultObj?["data"] as Map<String, dynamic>?;

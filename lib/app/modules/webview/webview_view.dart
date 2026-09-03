@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:axpert/app/controller/global_controller.dart';
@@ -126,10 +127,9 @@ class WebviewView extends GetView<WebViewController> {
                     //   },
                     // ),
                     InAppWebView(
-                      initialUrlRequest: URLRequest(
-                        url: WebUri(controller.currentUrl.value),
-                      ),
-
+                      // initialUrlRequest: URLRequest(
+                      //   url: WebUri(controller.currentUrl.value),
+                      // ),
                       initialSettings: InAppWebViewSettings(
                         // ── Old settings ─────────────────────────────────────
                         transparentBackground: true,
@@ -203,6 +203,58 @@ class WebviewView extends GetView<WebViewController> {
                       // ────────────────────────────────────────────────────────
                       onLoadStop: (webCtrl, url) async {
                         await controller.onPageFinished(url?.toString() ?? '');
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        await controller.refetchSession();
+
+                        // print('ARM TOKEN: $token');
+
+                        //                       await controller.refetchSession();
+
+                        //                       final result = await controller.webViewController
+                        //                           ?.evaluateJavascript(
+                        //                             source: """
+                        //     typeof getSession === 'function'
+                        //       ? getSession('ARM_Token')
+                        //       : 'getSession_not_found';
+                        //   """,
+                        //                           );
+
+                        //                       print("Session result: $result");
+
+                        //                       final result2 = await controller.webViewController
+                        //                           ?.evaluateJavascript(
+                        //                             source: """
+                        //   (async function() {
+                        //     try {
+                        //       const value = getSession('ARM_Token');
+                        //       return value;
+                        //     } catch (e) {
+                        //       return 'ERROR: ' + e.toString();
+                        //     }
+                        //   })();
+                        // """,
+                        //                           );
+
+                        //                       print("ARM_Token result: $result2");
+
+                        //                       final sessionStorage = await controller
+                        //                           .webViewController
+                        //                           ?.evaluateJavascript(
+                        //                             source: """
+                        //   sessionStorage.getItem('ARM_Token');
+                        // """,
+                        //                           );
+
+                        //                       print("sessionStorage: $sessionStorage");
+
+                        //                       final localStorage = await controller.webViewController
+                        //                           ?.evaluateJavascript(
+                        //                             source: """
+                        //   localStorage.getItem('ARM_Token');
+                        // """,
+                        //                           );
+
+                        //                       print("localStorage: $localStorage");
                       },
 
                       // ────────────────────────────────────────────────────────
@@ -652,6 +704,18 @@ class _BottomNavBar extends StatelessWidget {
                 onTap: controller.reload,
               ),
             ),
+          ),
+          // _NavButton(
+          //   icon: Icons.web,
+          //   enabled: true,
+          //   onTap: controller.tempLoadUrl,
+          //   activeColor: AppColors.blue10,
+          // ),
+          _NavButton(
+            icon: Icons.room_preferences_outlined,
+            enabled: true,
+            onTap: controller.refetchSession,
+            activeColor: AppColors.accentHotPink,
           ),
           _NavButton(
             icon: Icons.close_rounded,
