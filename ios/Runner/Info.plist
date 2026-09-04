@@ -28,6 +28,16 @@
 	<string>LaunchScreen</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is needed to scan QR codes</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We use your location to track site visits while you use the app.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We need background location access to track site visits even when the app isn't open.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+    	<string>location</string>
+    	<string>fetch</string>
+    	<string>remote-notification</string>
+	</array>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>

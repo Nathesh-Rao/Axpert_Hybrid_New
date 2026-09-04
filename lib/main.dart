@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'app/core/common.dart';
+import 'app/data/services/location/location_service.dart';
 import 'app/data/services/log/log_service.dart';
 import 'app/data/services/notification/firebase_notificastion.dart';
 import 'app/data/services/storage/storage_service.dart';
@@ -22,6 +23,7 @@ Future<void> main() async {
   // FirebaseMessaging.onBackgroundMessage(
   //   NotificationService.backgroundFirebaseMessageHandler,
   // );
+  await LocationService.initForegroundTask();
   await initializeNotification();
   FirebaseMessaging.onMessage.listen(onMessageListener);
   FirebaseMessaging.onBackgroundMessage(onBackgroundMessageListner);
@@ -37,7 +39,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent, 
+      statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
       statusBarBrightness: Brightness.light,
 

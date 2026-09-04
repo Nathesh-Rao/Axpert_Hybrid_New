@@ -9,15 +9,18 @@ import 'package:axpert/app/widgets/widgets.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../../data/enums/auth_enums.dart';
+import '../widget/biometric_switcher.dart';
 
 class LoginView extends GetView<AuthController> {
   const LoginView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   controller.onLoad();
-    // });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // controller.isOTP_auth.value = false;
+      // controller.isPWD_auth.value = false;
+      // controller.authType.value = AuthType.none;
+    });
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -130,6 +133,7 @@ class LoginView extends GetView<AuthController> {
                             onProjectSelected: controller.projectChanged,
                           ),
                         ),
+
                         SizedBox(
                           height: MediaQuery.of(context).size.height * 0.015,
                         ),
@@ -400,7 +404,7 @@ class LoginView extends GetView<AuthController> {
                         ),
                         SizedBox(height: 10),
 
-                        SizedBox(height: 20),
+                        // SizedBox(height: 20),
                         FittedBox(
                           child: Text(
                             "By using the software, you agree to the",
@@ -480,56 +484,68 @@ class LoginView extends GetView<AuthController> {
                         //   // width: MediaQuery.of(context).size.width * 0.075,
                         //   fit: BoxFit.fill,
                         // ),
-                        AxpertInfoWidget(),
-
-                        Visibility(
-                          visible:
-                              controller.isBiometricAvailable.value &&
-                              controller.willBio_userAuthenticate.value,
-                          child: GestureDetector(
-                            onTap: () {
-                              // controller.displayAuthenticationDialog();
-                            },
-                            child: Container(
-                              color: Colors.transparent,
-                              padding: EdgeInsets.all(20),
-                              child: Icon(
-                                Icons.fingerprint_outlined,
-                                color: AppColors.darkBlue,
-                                size: MediaQuery.of(context).size.height * 0.04,
-                              ),
-                            ),
-                          ),
-                        ),
+                        // AxpertInfoWidget(),
+                        // Obx(
+                        //   () => Visibility(
+                        //     visible: controller.isBiometricLoading.value,
+                        //     child: Padding(
+                        //       padding: EdgeInsets.only(top: 15.w),
+                        //       child: Row(
+                        //         mainAxisSize: MainAxisSize.min,
+                        //         spacing: 15.w,
+                        //         children: [
+                        //           CupertinoActivityIndicator(radius: 8),
+                        //           Text(
+                        //             "Checking biometrics",
+                        //             style: GoogleFonts.poppins(
+                        //               fontSize: 10,
+                        //               fontWeight: FontWeight.w500,
+                        //             ),
+                        //           ),
+                        //         ],
+                        //       ),
+                        //     ),
+                        //   ),
+                        // ),
+                        // Obx(
+                        //   () => Visibility(
+                        //     visible:
+                        //         controller.isBiometricAvailable.value &&
+                        //         controller.willBio_userAuthenticate.value &&
+                        //         !controller.isBiometricLoading.value,
+                        //     child: GestureDetector(
+                        //       onTap: () {
+                        //         controller.displayAuthenticationDialog();
+                        //       },
+                        //       child: Container(
+                        //         color: Colors.transparent,
+                        //         padding: EdgeInsets.all(20),
+                        //         child: Icon(
+                        //           Icons.fingerprint_outlined,
+                        //           color: AppColors.darkBlue,
+                        //           size:
+                        //               MediaQuery.of(context).size.height * 0.04,
+                        //         ),
+                        //       ),
+                        //     ),
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),
+
                   Align(
-                    alignment: Alignment.bottomRight,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 0, 25, 10),
-                      child: FutureBuilder(
-                        future: controller.getVersionName(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasData) {
-                            return Text(
-                              "v${snapshot.data}_${AppConst.APP_RELEASE_DATE}",
-                              // "v${snapshot.data}",
-                              style: GoogleFonts.poppins(
-                                textStyle: TextStyle(
-                                  color: AppColors.moreDark,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize:
-                                      MediaQuery.of(context).size.height *
-                                      0.012,
-                                ),
-                              ),
-                            );
-                          } else {
-                            return Text("");
-                          }
-                        },
-                      ),
+                    alignment: AlignmentGeometry.bottomCenter,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        BiometricSwitcher(),
+                        15.verticalSpace,
+                        AxpertInfoWidget(),
+                        15.verticalSpace,
+                        _testBuildVersion(),
+                        5.verticalSpace,
+                      ],
                     ),
                   ),
                 ],
@@ -541,59 +557,34 @@ class LoginView extends GetView<AuthController> {
     );
   }
 
-  // Widget _projectNameWidget({required String projectName, Color? color}) {
-  //   var baseColor = color ?? Color(0xff4B59D9);
-
-  //   return Row(
-  //     mainAxisSize: MainAxisSize.min,
-  //     children: [
-  //       Container(
-  //         padding: EdgeInsets.symmetric(vertical: 7, horizontal: 20),
-  //         decoration: BoxDecoration(
-  //           // color: Color(0xffD9D9D9).withAlpha(125),
-  //           color: baseColor.withValues(alpha: 0.1),
-  //           // boxShadow: [
-  //           //   BoxShadow(
-  //           //     color: Color(0xff4B59D9).withAlpha(50),
-  //           //     blurRadius: 5,
-  //           //   )
-  //           // ],
-  //           // border: Border.all(color: Color(0xff4B59D9).withAlpha(20)),
-  //           // gradient: LinearGradient(
-  //           //   colors: [
-  //           //     Color(0xff4B59D9).withAlpha(20),
-  //           //     Colors.white,
-  //           //     Colors.white,
-  //           //   ],
-  //           // ),
-  //           borderRadius: BorderRadius.circular(50),
-  //         ),
-  //         child: Center(
-  //           child: Row(
-  //             spacing: 5,
-  //             children: [
-  //               // SvgPicture.asset(
-  //               //   'assets/svg/project.svg',
-  //               //   width: 15,
-  //               //   height: 15,
-  //               //   color: Color(0xff4B59D9),
-  //               // ),
-  //               Text(
-  //                 projectName,
-  //                 textAlign: TextAlign.center,
-  //                 style: GoogleFonts.poppins(
-  //                   fontSize: 11,
-  //                   fontWeight: FontWeight.w600,
-  //                   color: baseColor,
-  //                 ),
-  //               ),
-  //             ],
-  //           ),
-  //         ),
-  //       ),
-  //     ],
-  //   );
-  // }
+  Widget _testBuildVersion() {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Padding(
+        padding: EdgeInsets.only(right: 20.w),
+        child: FutureBuilder(
+          future: controller.getVersionName(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return Text(
+                "v${snapshot.data}_${AppConst.APP_RELEASE_DATE}",
+                // "v${snapshot.data}",
+                style: GoogleFonts.poppins(
+                  textStyle: TextStyle(
+                    color: AppColors.moreDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: MediaQuery.of(context).size.height * 0.010.sp,
+                  ),
+                ),
+              );
+            } else {
+              return Text("");
+            }
+          },
+        ),
+      ),
+    );
+  }
 
   Widget _projectNameWidget({
     required String projectName,

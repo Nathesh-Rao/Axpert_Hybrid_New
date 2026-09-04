@@ -1,72 +1,116 @@
+// lib/app/data/services/location/location_service.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'location_task_handler.dart';
+import 'location_track_processor.dart';
 
 class LocationService {
-  static final Map _rMap = {"hasError": true, "eMsg": "default eMsg"};
-  static String _rAddress = "Default city, Default state, Default country";
-  static final bool _isLocationServiceEnabled = false;
+  static StreamSubscription<Position>? _iosPositionSub;
 
-  static Future<Position> determineCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-    print("longitude 1");
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      print("longitude 12$serviceEnabled");
+  /// Call once, early in main(), before runApp().
+  static Future<void> initForegroundTask() async {
+    if (!Platform.isAndroid) return;
 
-      // return Future.error('Location services are disabled.');
-    }
-
-    permission = await Geolocator.checkPermission();
-
-    print("permission++++++++$permission");
-    // if (permission == LocationPermission.denied) {
-    print("longitude 1234");
-
-    //  print("longitude "+permission.longitude.toString());
-    permission = await Geolocator.requestPermission();
-
-    if (permission == LocationPermission.denied) {
-      return Future.error('Location permissions are denied');
-    }
-    // }
-
-    if (permission == LocationPermission.deniedForever) {
-      return Future.error(
-        'Location permissions are permanently denied, we cannot request permissions.',
-      );
-    }
-    return await Geolocator.getCurrentPosition();
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'axpert_location_tracking',
+        channelName: 'Location Tracking',
+        channelDescription: 'Used to track location in the background.',
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: false,
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(15000), // tick every 15s; actual API calls gated by per-identifier interval
+        autoRunOnBoot: true,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
   }
 
   static Future startLocationTracking() async {
-    // try {
-    //   await BackgroundLocationTrackerManager.startTracking();
-    //   // LogService.writeLog(tag: "Service Started", subtag: "Service Started", message: "Service Started");
-    // } catch (e) {
-    //   LogService.writeLog(message: e.toString());
-    // }
+    if (Platform.isAndroid) {
+      final hasPermission = await FlutterForegroundTask.checkNotificationPermission();
+      if (hasPermission != NotificationPermission.granted) {
+        await FlutterForegroundTask.requestNotificationPermission();
+      }
+      final isRunning = await FlutterForegroundTask.isRunningService;
+      if (!isRunning) {
+        await FlutterForegroundTask.startService(
+          serviceId: 256,
+          notificationTitle: 'Axpert',
+          notificationText: 'Tracking location in background',
+          callback: startLocationCallback,
+        );
+      }
+    } else if (Platform.isIOS) {
+      if (_iosPositionSub != null) return; // already tracking
+
+      _iosPositionSub = Geolocator.getPositionStream(
+        locationSettings: AppleSettings(
+          accuracy: LocationAccuracy.high,
+          activityType: ActivityType.other,
+          distanceFilter: 20,
+          pauseLocationUpdatesAutomatically: false,
+          showBackgroundLocationIndicator: true,
+          allowBackgroundLocationUpdates: true,
+        ),
+      ).listen((position) async {
+        await processTrackedIdentifiers(position);
+      });
+    }
   }
 
   static Future stopLocationTracking(String identifier) async {
-    // try {
-    //   var pref = await SharedPreferences.getInstance();
-    //   await pref.reload();
-    //   String val = await pref.getString("outerData") ?? "{}";
-    //   Map outerData = jsonDecode(val);
-    //   if (outerData.containsKey(identifier)) outerData.remove(identifier);
-    //   if (outerData.length == 0 || identifier.toUpperCase() == "ALL") {
-    //     await BackgroundLocationTrackerManager.stopTracking();
-    //     await pref.remove("outerData");
-    //     // LogService.writeLog(tag: "Service Stopped", subtag: "Service Stopped", message: "Service Stopped");
-    //   } else {
-    //     val = jsonEncode(outerData);
-    //     await pref.setString("outerData", val);
-    //   }
-    // } catch (e) {
-    //   // LogService.writeLog(tag: "Error in Stopping Service", subtag: "Error in Stopping Service", message: "Error in Stopping Service ${e}");
-    // }
+    final pref = await SharedPreferences.getInstance();
+    await pref.reload();
+    String val = pref.getString("outerData") ?? "{}";
+    Map outerData;
+    try {
+      outerData = jsonDecode(val);
+    } catch (_) {
+      outerData = {};
+    }
+
+    if (outerData.containsKey(identifier)) outerData.remove(identifier);
+
+    if (outerData.isEmpty || identifier.toUpperCase() == "ALL") {
+      if (Platform.isAndroid) {
+        if (await FlutterForegroundTask.isRunningService) {
+          await FlutterForegroundTask.stopService();
+        }
+      } else {
+        await _iosPositionSub?.cancel();
+        _iosPositionSub = null;
+      }
+      await pref.remove("outerData");
+    } else {
+      await pref.setString("outerData", jsonEncode(outerData));
+    }
+  }
+
+  // --- unchanged from your current file ---
+  static Future<Position> determineCurrentLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // handled by LocationPermissionGate before this is ever reached
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied) {
+      return Future.error('Location permissions are denied');
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error('Location permissions are permanently denied, we cannot request permissions.');
+    }
+    return await Geolocator.getCurrentPosition();
   }
 
   static Future<Map<dynamic, dynamic>> getAddress({
@@ -74,27 +118,12 @@ class LocationService {
     required double lon,
   }) async {
     List<Placemark> placemarks = await placemarkFromCoordinates(lat, lon);
-
     if (placemarks.isNotEmpty) {
       Placemark data = placemarks.first;
-      // rAddress = "${data.subAdminArea}, ${data.adminArea}, ${data.countryName}";
-      if (kDebugMode) {
-        print(data.toString());
-      }
-      _rAddress =
-          "${data.subLocality}, ${data.locality}, ${data.administrativeArea}";
-      _rMap.remove("hasError");
-      _rMap.remove("eMsg");
-      _rMap.addAll({"hasError": false});
-      _rMap.addAll({"data": _rAddress});
-
-      return Future.value(_rMap);
-    } else {
-      _rMap.remove("hasError");
-      _rMap.remove("eMsg");
-      _rMap.addAll({"hasError": false});
-      _rMap.addAll({"eMgs": "No data available"});
-      return Future.value(_rMap);
+      final address = "${data.subLocality}, ${data.locality}, ${data.administrativeArea}";
+      if (kDebugMode) print(data.toString());
+      return {"hasError": false, "data": address};
     }
+    return {"hasError": false, "eMsg": "No data available"};
   }
 }

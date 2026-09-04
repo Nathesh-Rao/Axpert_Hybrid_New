@@ -1,4 +1,6 @@
 import '../../core/common.dart';
+import '../../data/services/location/location_permission_gate.dart';
+import '../../data/services/location/location_service.dart';
 import '../../widgets/widgets.dart';
 import 'controller/splash_controller.dart';
 
@@ -7,7 +9,12 @@ class SplashView extends GetView<SplashController> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (await LocationPermissionGate.consumePendingCheck()) {
+        await LocationPermissionGate.showBlockingUntilGranted();
+        await LocationService.startLocationTracking();
+      }
+      // await LocationPermissionGate.showBlockingUntilGranted();
       controller.onSplashLoad();
     });
 

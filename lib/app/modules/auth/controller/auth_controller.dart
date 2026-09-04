@@ -104,6 +104,9 @@ class AuthController extends GetxController {
   }
 
   Future<void> refreshCurrentProject() async {
+    isOTP_auth.value = false;
+    isPWD_auth.value = false;
+    authType.value = AuthType.none;
     selectedProject.value = await StorageService.getLastSelectedProject();
     currentProjectName.value = selectedProject.value?.schemaName ?? '';
     selectedColor.value = AppColors.colorFromHex(
@@ -521,6 +524,9 @@ class AuthController extends GetxController {
     // webviewController.openWebView(url: url);
     // WebViewController.open(url: url);
     // isPWD_auth.value = false;
+    isOTP_auth.value = false;
+    isPWD_auth.value = false;
+    authType.value = AuthType.none;
     await Get.toNamed(Routes.WEBVIEW);
   }
 

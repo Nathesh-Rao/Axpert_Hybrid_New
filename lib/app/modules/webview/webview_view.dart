@@ -712,9 +712,11 @@ class _BottomNavBar extends StatelessWidget {
           //   activeColor: AppColors.blue10,
           // ),
           _NavButton(
-            icon: Icons.room_preferences_outlined,
+            icon: Icons.arrow_left_outlined,
             enabled: true,
-            onTap: controller.refetchSession,
+            onTap: () async {
+              // await handleBack();
+            },
             activeColor: AppColors.accentHotPink,
           ),
           _NavButton(

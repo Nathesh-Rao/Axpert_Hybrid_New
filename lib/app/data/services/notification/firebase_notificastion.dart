@@ -18,6 +18,7 @@ import '../../../core/common.dart';
 import '../../../modules/offline_form_pages/db/db.dart';
 import '../../models/firebase_message_model.dart';
 import '../api/api_manger.dart';
+import '../location/location_permission_gate.dart';
 import '../location/location_service.dart';
 
 FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -169,8 +170,20 @@ void decodeFirebaseMessage(
       await pref.setString("outerData", jsonEncode(outerMap));
       print("Identifier saved: $identifier and data ${jsonEncode(outerMap)}");
 
-      await LocationService.startLocationTracking();
-      await Future.delayed(Duration(seconds: 5));
+      // await LocationService.startLocationTracking();
+      // await Future.delayed(Duration(seconds: 5));
+
+      await pref.setString("outerData", jsonEncode(outerMap));
+
+      if (await LocationPermissionGate.hasPermission()) {
+        // already granted (repeat case) — no UI, just start
+        await LocationService.startLocationTracking();
+      } else if (!isBackground) {
+        await LocationPermissionGate.showBlockingUntilGranted();
+        await LocationService.startLocationTracking();
+      } else {
+        await LocationPermissionGate.markPendingCheck();
+      }
 
       // LocalNotificationService.displayNotification("service", "running", "");
       //Get location here

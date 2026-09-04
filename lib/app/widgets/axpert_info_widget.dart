@@ -44,7 +44,7 @@ class AxpertInfoWidget extends StatelessWidget {
           Text(
             "${DateTime.now().year} AXPERT. All rights reserved",
             style: AppTextStyles.bodyMedium.copyWith(
-              color: context.colors.primaryText.withValues(alpha: 0.4),
+              color: context.colors.primaryText.withValues(alpha: 0.5),
               fontWeight: FontWeight.w500,
               fontSize: expand ? null : 12.sp,
             ),
