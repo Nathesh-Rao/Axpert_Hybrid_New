@@ -582,7 +582,7 @@ class OTPView extends GetView<AuthController> {
                     builder: (context, snapshot) {
                       if (snapshot.hasData) {
                         return Text(
-                          "Version:${snapshot.data}_${AppConst.APP_RELEASE_DATE}",
+                          "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
                           style: GoogleFonts.poppins(
                             color: Colors.black87,
                             fontWeight: FontWeight.w700,

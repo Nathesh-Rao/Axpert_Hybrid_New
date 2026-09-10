@@ -83,9 +83,9 @@ class WebViewController extends GetxController {
     super.onReady();
   }
 
-  void tempLoadUrl() {
-    _initializeWebSession();
-  }
+  // void tempLoadUrl() {
+  //   _initializeWebSession();
+  // }
 
   void _startPostLoginSync() async {
     const String tag = "[OFFLINE_POSTLOGIN_001]";

@@ -21,7 +21,7 @@ class ProjectListTile extends GetView<ProjectController> {
   final ProjectModel project;
   @override
   Widget build(BuildContext context) {
-    // final ProjectModel project = 
+    // final ProjectModel project =
 
     return Obx(() {
       final isEditing = controller.editingProject.value?.id == project.id;
@@ -148,7 +148,13 @@ class ProjectListTile extends GetView<ProjectController> {
             // ── Tile ─────────────────────────────────────────
             ListTile(
               onTap: () {
-                controller.onProjectTileClick(project);
+                if (isEditing) {
+                  controller.showError(
+                    "Please complete editing before moving on\n-OR-\nSelect any other project",
+                  );
+                } else {
+                  controller.onProjectTileClick(project);
+                }
               },
               tileColor: Colors.transparent,
               contentPadding: EdgeInsets.symmetric(

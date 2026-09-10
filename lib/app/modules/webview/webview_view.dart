@@ -693,32 +693,32 @@ class _BottomNavBar extends StatelessWidget {
           //     onTap: controller.goForward,
           //   ),
           // ),
-          Obx(
-            () => Spin(
-              animate: controller.isLoading.value,
-              infinite: true,
-              child: _NavButton(
-                rounded: controller.isLoading.value,
-                icon: Icons.refresh_rounded,
-                enabled: true,
-                onTap: controller.reload,
-              ),
-            ),
-          ),
+          // Obx(
+          //   () => Spin(
+          //     animate: controller.isLoading.value,
+          //     infinite: true,
+          //     child: _NavButton(
+          //       rounded: controller.isLoading.value,
+          //       icon: Icons.refresh_rounded,
+          //       enabled: true,
+          //       onTap: controller.reload,
+          //     ),
+          //   ),
+          // ),
           // _NavButton(
           //   icon: Icons.web,
           //   enabled: true,
           //   onTap: controller.tempLoadUrl,
           //   activeColor: AppColors.blue10,
           // ),
-          _NavButton(
-            icon: Icons.arrow_left_outlined,
-            enabled: true,
-            onTap: () async {
-              // await handleBack();
-            },
-            activeColor: AppColors.accentHotPink,
-          ),
+          // _NavButton(
+          //   icon: Icons.arrow_left_outlined,
+          //   enabled: true,
+          //   onTap: () async {
+          //     // await handleBack();
+          //   },
+          //   activeColor: AppColors.accentHotPink,
+          // ),
           _NavButton(
             icon: Icons.close_rounded,
             enabled: true,
@@ -732,26 +732,26 @@ class _BottomNavBar extends StatelessWidget {
           //   onTap: controller.closeScreen,
           //   activeColor: AppColors.darkBlue,
           // ),
-          Obx(
-            () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
-                ? _NavButton(
-                    icon: Icons.description_outlined,
-                    enabled: true,
-                    onTap: () {
-                      Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
-                    },
-                    activeColor: AppColors.green,
-                  )
-                // FloatingActionButton(
-                //     backgroundColor: AppColors.darkBlue,
-                //     foregroundColor: Colors.white,
-                //     child: Icon(Icons.insert_page_break_sharp),
-                //     onPressed: () {
-                //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
-                //     },
-                //   )
-                : SizedBox.shrink(),
-          ),
+          // Obx(
+          //   () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
+          //       ? _NavButton(
+          //           icon: Icons.description_outlined,
+          //           enabled: true,
+          //           onTap: () {
+          //             Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+          //           },
+          //           activeColor: AppColors.green,
+          //         )
+          //       // FloatingActionButton(
+          //       //     backgroundColor: AppColors.darkBlue,
+          //       //     foregroundColor: Colors.white,
+          //       //     child: Icon(Icons.insert_page_break_sharp),
+          //       //     onPressed: () {
+          //       //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+          //       //     },
+          //       //   )
+          //       : SizedBox.shrink(),
+          // ),
         ],
       ),
     );

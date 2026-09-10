@@ -76,6 +76,10 @@ Future<void> initializeNotification() async {
     settings: initializationSettings,
     onDidReceiveNotificationResponse: onDidReceiveNotificationResponse,
   );
+  final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+  if (apnsToken == null) {
+    await FirebaseMessaging.instance.onTokenRefresh.first;
+  }
 
   var fcmID = await messaging.getToken();
   // globalVariableController.FCMID.value = fcmID ?? '';
@@ -150,58 +154,39 @@ void decodeFirebaseMessage(
     var receivedProjectName = messageData['project'].toString().trim();
     if (receivedProjectName != projectName) return;
     if (messageData['type'].toString().toLowerCase() == 'sendlocation') {
-      //new functionality.....
-      //update interval
-      String interval = messageData['interval'].toString();
-      String identifier = messageData['identifier'];
-      print("Received Identifiers: $identifier");
-      var pref = await SharedPreferences.getInstance();
-      await pref.reload();
-      String outerDataStr = pref.getString("outerData") ?? "{}";
-      Map outerMap = jsonDecode(outerDataStr);
-      Map innerDetails = {};
-      if (outerMap.containsKey(identifier)) {
-        innerDetails = outerMap[identifier];
-      }
-      innerDetails["interval"] = interval;
-      innerDetails["lastData"] = jsonEncode(message.data);
-      outerMap[identifier] = innerDetails;
+      // String interval = messageData['interval'].toString();
+      // String identifier = messageData['identifier'];
+      // print("Received Identifiers: $identifier");
+      // var pref = await SharedPreferences.getInstance();
+      // await pref.reload();
+      // String outerDataStr = pref.getString("outerData") ?? "{}";
+      // Map outerMap = jsonDecode(outerDataStr);
+      // Map innerDetails = {};
+      // if (outerMap.containsKey(identifier)) {
+      //   innerDetails = outerMap[identifier];
+      // }
+      // innerDetails["interval"] = interval;
+      // innerDetails["lastData"] = jsonEncode(message.data);
+      // outerMap[identifier] = innerDetails;
 
-      await pref.setString("outerData", jsonEncode(outerMap));
-      print("Identifier saved: $identifier and data ${jsonEncode(outerMap)}");
+      // await pref.setString("outerData", jsonEncode(outerMap));
+      // print("Identifier saved: $identifier and data ${jsonEncode(outerMap)}");
 
-      // await LocationService.startLocationTracking();
-      // await Future.delayed(Duration(seconds: 5));
+      // await pref.setString("outerData", jsonEncode(outerMap));
 
-      await pref.setString("outerData", jsonEncode(outerMap));
-
-      if (await LocationPermissionGate.hasPermission()) {
-        // already granted (repeat case) — no UI, just start
-        await LocationService.startLocationTracking();
-      } else if (!isBackground) {
-        await LocationPermissionGate.showBlockingUntilGranted();
-        await LocationService.startLocationTracking();
-      } else {
-        await LocationPermissionGate.markPendingCheck();
-      }
-
-      // LocalNotificationService.displayNotification("service", "running", "");
-      //Get location here
-
-      // if (lastApiCall == "0")
-      //   await getLocationAndCallApi(data);
-      // else {
-      //   var dt = DateFormat("dd-MM-yyyy HH:mm:ss").parse(lastApiCall);
-      //   var diff = dt.difference(DateTime.now()).inMinutes;
-      //   if (diff > int.parse(interval)) {
-      //     await getLocationAndCallApi(data);
-      //   }
+      // if (await LocationPermissionGate.hasPermission()) {
+      //   // already granted (repeat case) — no UI, just start
+      //   await LocationService.startLocationTracking();
+      // } else if (!isBackground) {
+      //   await LocationPermissionGate.showBlockingUntilGranted();
+      //   await LocationService.startLocationTracking();
+      // } else {
+      //   await LocationPermissionGate.markPendingCheck();
       // }
     } else if (messageData['type'].toString().toLowerCase() == 'stoplocation') {
-      // stopBackgroundLocationService();
-      LocationService.stopLocationTracking(
-        messageData['identifier'].toString(),
-      );
+      // LocationService.stopLocationTracking(
+      //   messageData['identifier'].toString(),
+      // );
     }
     return;
   }

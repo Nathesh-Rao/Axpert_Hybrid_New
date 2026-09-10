@@ -567,7 +567,7 @@ class LoginView extends GetView<AuthController> {
           builder: (context, snapshot) {
             if (snapshot.hasData) {
               return Text(
-                "v${snapshot.data}_${AppConst.APP_RELEASE_DATE}",
+                "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
                 // "v${snapshot.data}",
                 style: GoogleFonts.poppins(
                   textStyle: TextStyle(

@@ -456,6 +456,10 @@ class ProjectController extends GetxController
     );
   }
 
+  void showError(String message) {
+    _showErrorSnackbar(message);
+  }
+
   void _showErrorSnackbar(String message) {
     Get.snackbar(
       '',
@@ -532,17 +536,17 @@ class ProjectController extends GetxController
 
   //   _addProject(project);
   // }
-  final formKey = GlobalKey<FormState>();
+  // final formKey = GlobalKey<FormState>();
 
-  final Map<String, GlobalKey<FormFieldState>> fieldKeys = {
-    'webUrl': GlobalKey<FormFieldState>(),
-    'armUrl': GlobalKey<FormFieldState>(),
-    'connectionName': GlobalKey<FormFieldState>(),
-    'connectionCaption': GlobalKey<FormFieldState>(),
-  };
+  // final Map<String, GlobalKey<FormFieldState>> fieldKeys = {
+  //   'webUrl': GlobalKey<FormFieldState>(),
+  //   'armUrl': GlobalKey<FormFieldState>(),
+  //   'connectionName': GlobalKey<FormFieldState>(),
+  //   'connectionCaption': GlobalKey<FormFieldState>(),
+  // };
 
-  bool validate() {
-    return (formKey.currentState?.validate() ?? false);
+  bool validate(GlobalKey<FormState> formKey) {
+    return formKey.currentState?.validate() ?? false;
   }
 
   bool validateField(GlobalKey<FormFieldState>? key) {
@@ -578,8 +582,8 @@ class ProjectController extends GetxController
     return null;
   }
 
-  void onSaveUrlDetails() async {
-    if (!validate()) {
+  void onSaveUrlDetails(GlobalKey<FormState> formKey) async {
+    if (!validate(formKey)) {
       HapticManager.warning();
       return;
     }
@@ -635,7 +639,7 @@ class ProjectController extends GetxController
       currentTileState.value = ProjectAddingState.defaultState;
       _showErrorSnackbar(_getDuplicateReason(dReason));
       // editingProject.value = null;
-
+      cancelEdit();
       projectSavingStopped();
       return;
     }
@@ -911,7 +915,8 @@ class ProjectController extends GetxController
     //   url: url,
     //   title: project.caption.isNotEmpty ? project.caption : project.schemaName,
     // );
-
+    // editingProject.value = null;
+    cancelEdit();
     Get.toNamed(Routes.LOGIN);
   }
 

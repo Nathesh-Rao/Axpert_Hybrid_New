@@ -125,32 +125,45 @@ class ProjectHeroManualWidget extends GetView<ProjectController> {
 // ────────────────────────────────────────────────────────────────────
 // URL Details tab content
 // ────────────────────────────────────────────────────────────────────
-class _UrlDetailsTab extends GetView<ProjectController> {
+class _UrlDetailsTab extends StatefulWidget {
   const _UrlDetailsTab();
 
+  @override
+  State<_UrlDetailsTab> createState() => _UrlDetailsTabState();
+}
+
+class _UrlDetailsTabState extends State<_UrlDetailsTab> {
+  final ProjectController controller = Get.find<ProjectController>();
+  final _formKey = GlobalKey<FormState>();
+  final Map<String, GlobalKey<FormFieldState>> _fieldKeys = {
+    'webUrl': GlobalKey<FormFieldState>(),
+    'armUrl': GlobalKey<FormFieldState>(),
+    'connectionName': GlobalKey<FormFieldState>(),
+    'connectionCaption': GlobalKey<FormFieldState>(),
+  };
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(12.w, 10.h, 12.w, 14.h),
       child: Form(
-        key: controller.formKey,
+        key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             _InputField(
-              fieldKey: controller.fieldKeys['webUrl'],
+              fieldKey: _fieldKeys['webUrl'],
               focusNode: controller.webUrlFocusNode,
               controller: controller.webUrlCtrl,
               hint: 'Web URL',
               keyboardType: TextInputType.url,
               validator: controller.validateUrl,
               onFieldSubmitted: (_) {
-                controller.validateField(controller.fieldKeys['webUrl']);
+                controller.validateField(_fieldKeys['webUrl']);
               },
             ),
             SizedBox(height: 10.h),
             _InputField(
-              fieldKey: controller.fieldKeys['armUrl'],
+              fieldKey: _fieldKeys['armUrl'],
 
               focusNode: controller.armUrlFocusNode,
               controller: controller.armUrlCtrl,
@@ -158,37 +171,33 @@ class _UrlDetailsTab extends GetView<ProjectController> {
               keyboardType: TextInputType.url,
               validator: controller.validateUrl,
               onFieldSubmitted: (_) {
-                controller.validateField(controller.fieldKeys['armUrl']);
+                controller.validateField(_fieldKeys['armUrl']);
               },
             ),
             SizedBox(height: 10.h),
             _InputField(
-              fieldKey: controller.fieldKeys['connectionName'],
+              fieldKey: _fieldKeys['connectionName'],
               focusNode: controller.connectionNameFocusNode,
               controller: controller.connectionNameCtrl,
               hint: 'Connection Name',
               validator: controller.validateNormalField,
               onFieldSubmitted: (_) {
-                controller.validateField(
-                  controller.fieldKeys['connectionName'],
-                );
+                controller.validateField(_fieldKeys['connectionName']);
               },
             ),
             SizedBox(height: 10.h),
             _InputField(
-              fieldKey: controller.fieldKeys['connectionCaption'],
+              fieldKey: _fieldKeys['connectionCaption'],
               focusNode: controller.connectionCaptionFocusNode,
               controller: controller.connectionCaptionCtrl,
               hint: 'Connection Caption',
               validator: controller.validateNormalField,
               onFieldSubmitted: (_) {
-                controller.validateField(
-                  controller.fieldKeys['connectionCaption'],
-                );
+                controller.validateField(_fieldKeys['connectionCaption']);
               },
             ),
             SizedBox(height: 14.h),
-            _SaveButton(onTap: controller.onSaveUrlDetails),
+            _SaveButton(onTap: () => controller.onSaveUrlDetails(_formKey)),
           ],
         ),
       ),
