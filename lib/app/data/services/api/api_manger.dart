@@ -1086,7 +1086,18 @@ class ApiManager {
           headers: header,
           body: body,
         );
-
+        print(
+          '\n'
+          '════════════════════════════════════════════════════════════\n'
+          'API REQUEST / RESPONSE\n'
+          '════════════════════════════════════════════════════════════\n'
+          'METHOD   : POST\n'
+          'URL      : $url\n'
+          'BODY     : $body\n'
+          'STATUS   : ${response.statusCode}\n'
+          'RESULT   : ${response.body}\n'
+          '════════════════════════════════════════════════════════════\n',
+        );
         // print("API_RESPONSE_DATA: $API_NAME: ${response.body}\n");
         // print("");
         if (response.statusCode == 200) {

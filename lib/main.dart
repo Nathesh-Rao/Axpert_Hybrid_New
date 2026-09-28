@@ -25,6 +25,8 @@ Future<void> main() async {
   // );
   await LocationService.initForegroundTask();
   await initializeNotification();
+  // unawaited(initializeNotification());
+
   FirebaseMessaging.onMessage.listen(onMessageListener);
   FirebaseMessaging.onBackgroundMessage(onBackgroundMessageListner);
   FirebaseMessaging.onMessageOpenedApp.listen(onMessageOpenAppListener);

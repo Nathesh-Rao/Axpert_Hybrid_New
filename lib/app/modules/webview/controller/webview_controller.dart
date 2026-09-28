@@ -823,6 +823,10 @@ class WebViewController extends GetxController {
 
     // ── Session URL ───────────────────────────────────────────────
 
+    if (url.toLowerCase().contains('signout.aspx')) {
+      Get.back();
+    }
+
     if (url.toLowerCase().contains('sess.aspx')) {
       await controller.loadUrl(
         urlRequest: URLRequest(url: WebUri('$url?axmain=true')),

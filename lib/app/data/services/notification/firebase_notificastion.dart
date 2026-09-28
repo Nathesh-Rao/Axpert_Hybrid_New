@@ -76,12 +76,20 @@ Future<void> initializeNotification() async {
     settings: initializationSettings,
     onDidReceiveNotificationResponse: onDidReceiveNotificationResponse,
   );
-  final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-  if (apnsToken == null) {
-    await FirebaseMessaging.instance.onTokenRefresh.first;
-  }
+  // final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+  // if (apnsToken == null) {
+  //   await FirebaseMessaging.instance.onTokenRefresh.first;
+  // }
 
-  var fcmID = await messaging.getToken();
+  String? fcmID;
+  try {
+    fcmID = await messaging.getToken();
+  } catch (e) {
+    LogService.writeOnConsole(
+      message: "initializeNotification()=> getToken() failed: $e",
+    );
+    fcmID = null;
+  }
   // globalVariableController.FCMID.value = fcmID ?? '';
   await StorageService.setFCMID(fcmID ?? "");
   print("FCMID: $fcmID");
