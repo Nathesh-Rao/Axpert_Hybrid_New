@@ -570,13 +570,15 @@ class ProjectController extends GetxController
     return null;
   }
 
-  String? validateNormalField(String? value) {
+  String? validateNormalField(String? value, bool isCaption) {
+    var fName = isCaption ? "caption" : "connection";
+
     if (value == null || value.trim().isEmpty) {
-      return 'Please enter a connection name';
+      return 'Please enter a $fName name';
     }
 
     if (value.trim().length < 3) {
-      return 'Name must be at least 3 characters long';
+      return '$fName must be at least 3 characters long';
     }
 
     return null;

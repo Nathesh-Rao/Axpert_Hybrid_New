@@ -180,7 +180,7 @@ class _UrlDetailsTabState extends State<_UrlDetailsTab> {
               focusNode: controller.connectionNameFocusNode,
               controller: controller.connectionNameCtrl,
               hint: 'Connection Name',
-              validator: controller.validateNormalField,
+              validator: (v) => controller.validateNormalField(v, false),
               onFieldSubmitted: (_) {
                 controller.validateField(_fieldKeys['connectionName']);
               },
@@ -191,7 +191,7 @@ class _UrlDetailsTabState extends State<_UrlDetailsTab> {
               focusNode: controller.connectionCaptionFocusNode,
               controller: controller.connectionCaptionCtrl,
               hint: 'Connection Caption',
-              validator: controller.validateNormalField,
+              validator: (v) => controller.validateNormalField(v, true),
               onFieldSubmitted: (_) {
                 controller.validateField(_fieldKeys['connectionCaption']);
               },
