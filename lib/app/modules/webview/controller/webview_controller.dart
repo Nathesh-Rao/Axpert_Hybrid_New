@@ -21,6 +21,8 @@ class WebViewController extends GetxController {
 
   final RxBool isLoading = true.obs;
   final RxInt loadingProgress = 0.obs;
+  final RxBool newWindowIsLoading = true.obs;
+  final RxBool newWindowDownloadStart = false.obs;
 
   final RxBool canGoBack = false.obs;
   final RxBool canGoForward = false.obs;

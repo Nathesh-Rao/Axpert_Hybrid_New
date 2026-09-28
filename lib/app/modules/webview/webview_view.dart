@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common.dart';
+import 'package:axpert/app/core/utils/utils.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/modules/project/binding/project_binding.dart';
 import 'package:axpert/app/modules/project/project_view.dart';
@@ -133,6 +134,8 @@ class WebviewView extends GetView<WebViewController> {
                       initialSettings: InAppWebViewSettings(
                         // ── Old settings ─────────────────────────────────────
                         transparentBackground: true,
+
+                        useOnDownloadStart: true,
 
                         javaScriptEnabled: true,
 
@@ -326,10 +329,11 @@ class WebviewView extends GetView<WebViewController> {
                         final windowId = createWindowRequest.windowId;
 
                         print('New WebView window: $windowId');
-
+                        controller.newWindowDownloadStart.value = false;
+                        controller.newWindowIsLoading.value = false;
                         Get.to(
                           () => NewWindowPage(windowId: windowId),
-                          transition: Transition.cupertino,
+                          transition: Transition.fadeIn,
                           duration: const Duration(milliseconds: 500),
                         );
 
@@ -796,54 +800,169 @@ class _NavButton extends StatelessWidget {
   }
 }
 
-class NewWindowPage extends StatefulWidget {
-  final int windowId;
-
+class NewWindowPage extends GetView<WebViewController> {
   const NewWindowPage({super.key, required this.windowId});
-
-  @override
-  State<NewWindowPage> createState() => _NewWindowPageState();
-}
-
-class _NewWindowPageState extends State<NewWindowPage> {
-  InAppWebViewController? controller;
-
+  final int windowId;
   @override
   Widget build(BuildContext context) {
+    debugPrint("new-Window => $windowId");
     return Scaffold(
+      // appBar: AppBar(title: Text("TEST TITLE")),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: InAppWebView(
-          windowId: widget.windowId,
+        child: Stack(
+          children: [
+            Obx(
+              () => AnimatedPositioned(
+                duration: Duration(milliseconds: 600),
+                bottom: (controller.newWindowIsLoading.value) ? 20 : -50,
+                left: 0,
+                right: 0,
+                child: LoadingLottieWidget(showColor: true),
+              ),
+            ),
+            Obx(
+              () => Visibility(
+                visible: controller.newWindowDownloadStart.value,
+                child: Positioned(
+                  bottom: 0,
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: RotatedBox(
+                    quarterTurns: 2,
+                    child: LoadingLottieWidget(
+                      showColor: true,
+                      customLottie: "assets/lotties/upload_files.json",
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            InAppWebView(
+              windowId: windowId,
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                transparentBackground: true,
+              ),
 
-          initialSettings: InAppWebViewSettings(
-            javaScriptEnabled: true,
-            domStorageEnabled: true,
-            databaseEnabled: true,
-            javaScriptCanOpenWindowsAutomatically: true,
-            useShouldOverrideUrlLoading: true,
-            supportMultipleWindows: true,
-            transparentBackground: true,
-          ),
+              // onWebViewCreated: (c) => controller = c,
+              onLoadStart: (c, url) {
+                controller.newWindowIsLoading.value = true;
+                debugPrint('POPUP loadStart: $url');
+              },
+              onLoadStop: (c, url) {
+                controller.newWindowIsLoading.value = false;
+                debugPrint('POPUP loadStop: $url');
+              },
+              onCreateWindow: (c, req) async {
+                debugPrint('POPUP wants another window: ${req.request.url}');
+                return false;
+              },
 
-          onWebViewCreated: (webCtrl) {
-            controller = webCtrl;
-          },
+              onDownloadStartRequest: (ctr, downloadStartRequest) async {
+                controller.newWindowDownloadStart.value = true;
+                final url = downloadStartRequest.url.toString();
 
-          onConsoleMessage: (controller, consoleMessage) {
-            print(
-              'New window console: '
-              '$consoleMessage',
-            );
-          },
+                // Use your new download implementation.
+                debugPrint('New window download: $url');
 
-          onDownloadStartRequest: (controller, downloadStartRequest) async {
-            final url = downloadStartRequest.url.toString();
-
-            // Use your new download implementation.
-            print('New window download: $url');
-          },
+                AppUtility.downloadFileInAppWebView(
+                  controller: ctr,
+                  downloadStartRequest: downloadStartRequest,
+                  onDownloadComplete: (path) {
+                    controller.newWindowDownloadStart.value = false;
+                    debugPrint("Download path => $path");
+                    Get.back();
+                  },
+                  onDownloadError: (e) {
+                    debugPrint("Download Error => $e");
+                    controller.newWindowDownloadStart.value = false;
+                    Get.back();
+                  },
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+// class NewWindowPage extends StatefulWidget {
+//   final int windowId;
+
+//   const NewWindowPage({super.key, required this.windowId});
+
+//   @override
+//   State<NewWindowPage> createState() => _NewWindowPageState();
+// }
+
+// class _NewWindowPageState extends State<NewWindowPage> {
+//   InAppWebViewController? controller;
+//   // WebViewController webviewGController = Get.find();
+//   @override
+//   Widget build(BuildContext context) {
+//     print("new-Window => ${widget.windowId}");
+//     return Scaffold(
+//       appBar: AppBar(title: Text("TEST TITLE")),
+//       backgroundColor: Colors.amber,
+//       body: SafeArea(
+//         child: InAppWebView(
+//           // windowId: widget.windowId,
+
+//           // initialSettings: InAppWebViewSettings(
+//           //   javaScriptEnabled: true,
+//           //   domStorageEnabled: true,
+//           //   databaseEnabled: true,
+//           //   useOnDownloadStart: true,
+//           //   javaScriptCanOpenWindowsAutomatically: true,
+//           //   useShouldOverrideUrlLoading: true,
+//           //   supportMultipleWindows: true,
+//           //   transparentBackground: true,
+//           // ),
+
+//           // onWebViewCreated: (webCtrl) {
+//           //   controller = webCtrl;
+//           // },
+
+//           // onConsoleMessage: (controller, consoleMessage) {
+//           //   print(
+//           //     'New window console: '
+//           //     '$consoleMessage',
+//           //   );
+//           // },
+//           windowId: widget.windowId,
+//           initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
+//           onWebViewCreated: (c) => controller = c,
+//           onLoadStart: (c, url) => print('POPUP loadStart: $url'),
+//           onCreateWindow: (c, req) async {
+//             print('POPUP wants another window: ${req.request.url}');
+//             return false;
+//           },
+
+//           onDownloadStartRequest: (ctr, downloadStartRequest) async {
+//             final url = downloadStartRequest.url.toString();
+
+//             // Use your new download implementation.
+//             print('New window download: $url');
+
+//             AppUtility.downloadFileInAppWebView(
+//               controller: ctr,
+//               downloadStartRequest: downloadStartRequest,
+//               onDownloadComplete: (path) {
+//                 print("Download path => $path");
+//                 Get.back();
+//               },
+//               onDownloadError: (e) {
+//                 print("Download Error => $e");
+//                 Get.back();
+//               },
+//             );
+//           },
+//         ),
+//       ),
+//     );
+//   }
+// }

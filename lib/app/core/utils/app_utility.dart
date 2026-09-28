@@ -221,7 +221,11 @@ class AppUtility {
       if (onComplete != null) {
         onComplete(path);
       }
-      _showDownloadSnackBar(message: "File downloaded to $path");
+      if (path == null) {
+        _showDownloadSnackBar(message: "File not downloaded", isError: true);
+      } else {
+        _showDownloadSnackBar(message: "File downloaded to $path");
+      }
     } catch (e) {
       if (onDownloadError != null) {
         onDownloadError(e.toString());

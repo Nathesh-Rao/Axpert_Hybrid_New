@@ -1,11 +1,15 @@
-
-
 import '../core/common.dart';
 
 class LoadingLottieWidget extends StatelessWidget {
-  const LoadingLottieWidget({super.key, this.opacity, this.showColor = false});
+  const LoadingLottieWidget({
+    super.key,
+    this.opacity,
+    this.showColor = false,
+    this.customLottie,
+  });
   final double? opacity;
   final bool showColor;
+  final String? customLottie;
   @override
   Widget build(BuildContext context) {
     var lightLoad = 'assets/lotties/loading_light.json';
@@ -19,11 +23,12 @@ class LoadingLottieWidget extends StatelessWidget {
       child: FadeInUp(
         from: 10.h,
         child: Lottie.asset(
-          showColor
-              ? colorLoad
-              : isDark
-              ? darkLoad
-              : lightLoad,
+          customLottie ??
+              (showColor
+                  ? colorLoad
+                  : isDark
+                  ? darkLoad
+                  : lightLoad),
           frameRate: FrameRate.max,
         ),
       ),

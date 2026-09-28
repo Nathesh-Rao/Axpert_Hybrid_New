@@ -456,8 +456,9 @@ class AuthController extends GetxController {
 
   Future<void> processSignInDataResponse(
     String projectname,
-    Map<String, dynamic> json,
-  ) async {
+    Map<String, dynamic> json, {
+    bool isFromOtp = false,
+  }) async {
     final userName = userNameController.text.trim();
 
     final token = json["token"]?.toString() ?? "";
@@ -498,10 +499,10 @@ class AuthController extends GetxController {
     }
 
     // 3. Navigate
-    await _processLoginAndGoToHomePage();
+    await _processLoginAndGoToHomePage(isFromOtp: isFromOtp);
   }
 
-  Future<void> _processLoginAndGoToHomePage() async {
+  Future<void> _processLoginAndGoToHomePage({bool isFromOtp = false}) async {
     //mobile Notification
     _updateLoginStatus('connecting to axpert');
     await _callApiForMobileNotification();
@@ -527,7 +528,11 @@ class AuthController extends GetxController {
     isOTP_auth.value = false;
     isPWD_auth.value = false;
     authType.value = AuthType.none;
-    await Get.toNamed(Routes.WEBVIEW);
+    if (isFromOtp) {
+      await Get.offNamed(Routes.WEBVIEW);
+    } else {
+      await Get.toNamed(Routes.WEBVIEW);
+    }
   }
 
   Future<void> _callApiForMobileNotification() async {
@@ -1191,7 +1196,11 @@ class AuthController extends GetxController {
 
     switch (result) {
       case ApiSuccess(data: final response):
-        await processSignInDataResponse(currentProjectName.value, response);
+        await processSignInDataResponse(
+          currentProjectName.value,
+          response,
+          isFromOtp: true,
+        );
         break;
       case ApiError(message: final errorMsg):
         otpErrorText.value = errorMsg;

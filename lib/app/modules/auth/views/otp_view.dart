@@ -355,6 +355,7 @@
 // }
 
 import 'package:axpert/app/data/const/app_const.dart';
+import 'package:axpert/app/widgets/axpert_info_widget.dart';
 import '../../../core/common.dart';
 import '../../auth/controller/auth_controller.dart';
 import '../widget/login_button.dart';
@@ -380,10 +381,27 @@ class OTPView extends GetView<AuthController> {
           centerTitle: true,
           title: Hero(
             tag: 'axpertImage',
-            child: Image.asset(
-              'assets/images/axpert_04.png',
+            child: Image.network(
+              controller.selectedProject.value?.logourl ?? '',
               width: MediaQuery.of(context).size.width * 0.24,
-              fit: BoxFit.fill,
+              fit: BoxFit.contain,
+              // frameBuilder:
+              //     (context, child, frame, wasSynchronouslyLoaded) {
+              //       if (wasSynchronouslyLoaded || frame != null) {
+              //         return child;
+              //       }
+              //       return SizedBox(
+              //         width: MediaQuery.of(context).size.width * 0.24,
+              //         child: const Center(child: LoadingLottieWidget()),
+              //       );
+              //     },
+              errorBuilder: (context, error, stackTrace) {
+                return Image.asset(
+                  'assets/images/axpert_logo_new.png',
+                  width: MediaQuery.of(context).size.width * 0.24,
+                  fit: BoxFit.fill,
+                );
+              },
             ),
           ),
         ),
@@ -554,50 +572,78 @@ class OTPView extends GetView<AuthController> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Powered By",
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12,
-                        color: Colors.black,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    Image.asset(
-                      'assets/images/agilelabslogo.png',
-                      height: MediaQuery.of(context).size.height * 0.04,
-                      fit: BoxFit.fill,
-                    ),
+                    // const SizedBox(height: 10),
+                    // AxpertInfoWidget(),
                   ],
                 ),
               ),
+
+              // Align(
+              //   alignment: Alignment.bottomRight,
+              //   child: Padding(
+              //     padding: const EdgeInsets.fromLTRB(0, 0, 25, 10),
+              //     child: FutureBuilder(
+              //       future: controller.getVersionName(),
+              //       builder: (context, snapshot) {
+              //         if (snapshot.hasData) {
+              //           return Text(
+              //             "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
+              //             style: GoogleFonts.poppins(
+              //               color: Colors.black87,
+              //               fontWeight: FontWeight.w700,
+              //               fontSize:
+              //                   MediaQuery.of(context).size.height * 0.012,
+              //             ),
+              //           );
+              //         }
+              //         return const SizedBox.shrink();
+              //       },
+              //     ),
+              //   ),
+              // ),
               Align(
-                alignment: Alignment.bottomRight,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 25, 10),
-                  child: FutureBuilder(
-                    future: controller.getVersionName(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData) {
-                        return Text(
-                          "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
-                          style: GoogleFonts.poppins(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w700,
-                            fontSize:
-                                MediaQuery.of(context).size.height * 0.012,
-                          ),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
+                alignment: AlignmentGeometry.bottomCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AxpertInfoWidget(),
+                    15.verticalSpace,
+                    _testBuildVersion(),
+                    5.verticalSpace,
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _testBuildVersion() {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Padding(
+        padding: EdgeInsets.only(right: 20.w),
+        child: FutureBuilder(
+          future: controller.getVersionName(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return Text(
+                "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
+                // "v${snapshot.data}",
+                style: GoogleFonts.poppins(
+                  textStyle: TextStyle(
+                    color: AppColors.moreDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: MediaQuery.of(context).size.height * 0.010.sp,
+                  ),
+                ),
+              );
+            } else {
+              return Text("");
+            }
+          },
         ),
       ),
     );
