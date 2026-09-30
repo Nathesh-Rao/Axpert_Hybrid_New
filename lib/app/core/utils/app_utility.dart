@@ -160,11 +160,12 @@ class AppUtility {
 
   static Future<void> downloadFileInAppWebView({
     required InAppWebViewController controller,
-    required DownloadStartRequest downloadStartRequest,
+    // required DownloadStartRequest downloadStartRequest,
+    required String url,
     void Function(String? path)? onDownloadComplete,
     void Function(String? error)? onDownloadError,
   }) async {
-    final url = downloadStartRequest.url.toString();
+    // final url = downloadStartRequest.url.toString();
     debugPrint("downloadFile_inAppWebView started: $url");
 
     if (url.startsWith("blob")) {
@@ -202,7 +203,15 @@ class AppUtility {
     }
   }
 
-  static void _download(
+  static void downloadFile(
+    String url,
+    void Function(String? path)? onComplete,
+    void Function(String? error)? onDownloadError,
+  ) async {
+    await _download(url, onComplete, onDownloadError);
+  }
+
+  static Future<void> _download(
     String url,
     void Function(String? path)? onComplete,
     void Function(String? error)? onDownloadError,

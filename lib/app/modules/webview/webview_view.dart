@@ -299,9 +299,12 @@ class WebviewView extends GetView<WebViewController> {
                           (webCtrl, downloadStartRequest) async {
                             final url = downloadStartRequest.url.toString();
 
-                            print('Download requested: $url');
-
-                            await controller.download(url);
+                            await AppUtility.downloadFileInAppWebView(
+                              controller: webCtrl,
+                              url: url,
+                              onDownloadComplete: (path) {},
+                              onDownloadError: (e) {},
+                            );
                           },
 
                       // ────────────────────────────────────────────────────────
@@ -869,7 +872,8 @@ class NewWindowPage extends GetView<WebViewController> {
 
                 AppUtility.downloadFileInAppWebView(
                   controller: ctr,
-                  downloadStartRequest: downloadStartRequest,
+                  // downloadStartRequest: downloadStartRequest,
+                  url: url,
                   onDownloadComplete: (path) {
                     controller.newWindowDownloadStart.value = false;
                     debugPrint("Download path => $path");

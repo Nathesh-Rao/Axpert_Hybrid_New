@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common/methods.dart';
+import 'package:axpert/app/core/utils/utils.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'dart:async';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -185,6 +186,7 @@ class WebViewController extends GetxController {
 
   Future<void> getBiometricStatus() async {
     var tag = "getBiometricStatus";
+    
     var willAuthLocal = StorageService.getWillBiometricAuthenticateForThisUser(
       projectName: projectname,
       username: username,
@@ -781,26 +783,28 @@ class WebViewController extends GetxController {
   // DOWNLOAD
   // ────────────────────────────────────────────────────────────────
 
-  Future<void> download(String url) async {
-    try {
-      isFileDownloading.value = true;
+  // Future<void> download(String url) async {
+  //   try {
+  //     isFileDownloading.value = true;
 
-      print('Download URL: $url');
+  //     print('Download URL: $url');
 
-      // Keep your existing download implementation here.
-      //
-      // Example:
-      //
-      // await FileDownloaderFlutter().urlFileSaver(
-      //   url: url,
-      //   fileName: url.split('/').last.split('.').first,
-      // );
-    } catch (e) {
-      print('Download error: $e');
-    } finally {
-      isFileDownloading.value = false;
-    }
-  }
+  //     // Keep your existing download implementation here.
+  //     //
+  //     // Example:
+  //     //
+  //     // await FileDownloaderFlutter().urlFileSaver(
+  //     //   url: url,
+  //     //   fileName: url.split('/').last.split('.').first,
+  //     // );
+
+  //     AppUtility.downloadFile(url, (_) {}, (_) {});
+  //   } catch (e) {
+  //     print('Download error: $e');
+  //   } finally {
+  //     isFileDownloading.value = false;
+  //   }
+  // }
 
   // ────────────────────────────────────────────────────────────────
   // URL HANDLING
@@ -847,7 +851,8 @@ class WebViewController extends GetxController {
     // ── File download ─────────────────────────────────────────────
 
     if (_isDownloadableFile(url)) {
-      await download(url);
+      // await download(url);
+      AppUtility.downloadFileInAppWebView(controller: controller, url: url);
 
       return NavigationActionPolicy.CANCEL;
     }

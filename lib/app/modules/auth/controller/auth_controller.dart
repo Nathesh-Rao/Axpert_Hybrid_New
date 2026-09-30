@@ -209,8 +209,16 @@ class AuthController extends GetxController {
     if (authType.value == AuthType.otpOnly || _isAuthFromBiometric) {
       await callSignInAPI();
     }
-
+    log("isPWD_auth.value ${isPWD_auth.value}", name: "lkey");
+    log(
+      "userPasswordController.text ${userPasswordController.text}",
+      name: "lkey",
+    );
+    log("remeberme ${rememberMe.value}", name: "lkey");
     if (isPWD_auth.value) {
+      if (!rememberMe.value && !_isAuthFromBiometric) {
+        userPasswordController.clear();
+      }
       FocusScope.of(Get.context!).requestFocus(passwordFocus);
     }
 
@@ -346,7 +354,10 @@ class AuthController extends GetxController {
     // 2. Extract values safely first (this avoids the ternary '?' syntax crash)
     final savedUsername = lastData?["username"]?.toString() ?? "";
     final savedPassword = lastData?["password"]?.toString() ?? "";
-
+    log(
+      "savedUsername: $savedUsername, savedPassword: $savedPassword",
+      name: "callSignInAPI",
+    );
     // 3. Now assign them cleanly
     var username = _isAuthFromBiometric
         ? savedUsername
@@ -402,6 +413,7 @@ class AuthController extends GetxController {
             debugPrint(
               "Otpmsg: ${otpMsg.value} \nOtpkey: ${otpLoginKey.value}",
             );
+            startOtpTimer();
             Get.toNamed(Routes.OTP);
           }
         } else {
