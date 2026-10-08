@@ -12,6 +12,7 @@ import '../../../data/const/app_const.dart';
 import '../../../data/services/connectivity/internet_connectivity.dart';
 import '../../../data/services/log/log_service.dart';
 import '../../../data/services/storage/storage_service.dart';
+import '../../offline_form_pages/auto_sync/sync.dart';
 import '../../offline_form_pages/db/db.dart';
 
 class WebViewController extends GetxController {
@@ -62,7 +63,12 @@ class WebViewController extends GetxController {
   var willAuth = false;
 
   // ── From Landing page controller ─────────────────────────────────────────────
-
+  // ── Double back-to-exit state ───────────────────────────────────
+  DateTime? _lastHomeLoadedTime;
+  DateTime? _lastEventTime;
+  bool _initialHomeLoadIgnored = false;
+  static const Duration _exitWindow = Duration(seconds: 3);
+  static const Duration _debounce = Duration(milliseconds: 800);
   // ── File extensions ─────────────────────────────────────────────
   @override
   void onInit() {
@@ -100,24 +106,43 @@ class WebViewController extends GetxController {
         message:
             "$tag[START] Post-login offline sync started. isOnline=$isOnline",
       );
-      GlobalVariableController.to.isDataSourcefetchingOnStart.value = true;
-      await OfflineDbModule.handlePostLogin(
-        // username: await appStorage.retrieveValue(AppStorage.USER_NAME) ?? "",
-        // projectName: globalVariableController.PROJECT_NAME.value,
-        isInternetAvailable: isOnline,
-      ).then((_) {
+
+      // await OfflineDbModule.handlePostLogin(
+      //   // username: await appStorage.retrieveValue(AppStorage.USER_NAME) ?? "",
+      //   // projectName: globalVariableController.PROJECT_NAME.value,
+      //   isInternetAvailable: isOnline,
+      // ).then((_) {
+      //   GlobalVariableController.to.isDataSourcefetchingOnStart.value = false;
+      //   GlobalVariableController.to.totalDsCountOnStart.value = 0;
+      //   GlobalVariableController.to.completedDsCountOnStart.value = 0;
+      // });
+
+      // await OfflineBackgroundSyncService.instance.start();
+      if (isOnline) {
+        GlobalVariableController.to.isDataSourcefetchingOnStart.value = true;
+        await OfflineDbModule.handlePostLogin(
+          isInternetAvailable: isOnline,
+        ).then((_) {
+          GlobalVariableController.to.isDataSourcefetchingOnStart.value = false;
+          GlobalVariableController.to.totalDsCountOnStart.value = 0;
+          GlobalVariableController.to.completedDsCountOnStart.value = 0;
+        });
+      } else {
+        GlobalVariableController.to.OFFLINE_FORMS_COUNT.value =
+            await OfflineDbModule.getOfflinePagesCount();
         GlobalVariableController.to.isDataSourcefetchingOnStart.value = false;
         GlobalVariableController.to.totalDsCountOnStart.value = 0;
         GlobalVariableController.to.completedDsCountOnStart.value = 0;
-      });
+      }
 
-      // await OfflineBackgroundSyncService.instance.start();
       LogService.writeLog(
         message: "$tag[SUCCESS] Post-login offline sync finished",
       );
     } catch (e, st) {
       LogService.writeLog(message: "$tag[FAILED] Post-login sync failed => $e");
       LogService.writeLog(message: "$tag[STACK] $st");
+    } finally {
+      // OfflineBackgroundSyncService.instance.start();
     }
   }
 
@@ -186,7 +211,7 @@ class WebViewController extends GetxController {
 
   Future<void> getBiometricStatus() async {
     var tag = "getBiometricStatus";
-    
+
     var willAuthLocal = StorageService.getWillBiometricAuthenticateForThisUser(
       projectName: projectname,
       username: username,
@@ -759,7 +784,7 @@ class WebViewController extends GetxController {
         closeScreen();
         return true;
       }
-      _checkForMainUrl();
+      // _checkForMainUrl();
       return false;
     } catch (e) {
       log("catch error : $e", name: tag);
@@ -872,8 +897,11 @@ class WebViewController extends GetxController {
 
   void onConsoleMessage(ConsoleMessage consoleMessage) {
     print('Console Message: $consoleMessage');
-
+    if (consoleMessage.toString().contains('axm_homepageloaded')) {
+      _handleHomePageLoaded();
+    }
     if (consoleMessage.toString().contains('axm_mainpageloaded')) {
+      // _handleHomePageLoaded();
       // Old implementation:
       //
       // menuHomePageController...
@@ -888,6 +916,67 @@ class WebViewController extends GetxController {
     if (consoleMessage.toString().contains('Next Link')) {}
   }
 
+  void _handleHomePageLoaded() {
+    final now = DateTime.now();
+    log('homepageloaded triggered at $now', name: 'BackExit');
+
+    // 1. Ignore duplicate events fired by the same page load
+    if (_lastEventTime != null && now.difference(_lastEventTime!) < _debounce) {
+      log('ignored: duplicate within debounce', name: 'BackExit');
+      return;
+    }
+    _lastEventTime = now;
+
+    // 2. Ignore the very first home load (app start / login)
+    if (!_initialHomeLoadIgnored) {
+      _initialHomeLoadIgnored = true;
+      log('ignored: initial load', name: 'BackExit');
+      return;
+    }
+
+    // 3. Second trigger inside the window -> exit
+    if (_lastHomeLoadedTime != null &&
+        now.difference(_lastHomeLoadedTime!) <= _exitWindow) {
+      log('second trigger -> exiting', name: 'BackExit');
+      _lastHomeLoadedTime = null;
+      // Get.closeAllSnackbars();
+      // Get.back();
+      _exitScreen();
+      // If Get.back() doesn't leave the screen (root route), use this instead:
+      // SystemNavigator.pop();
+      return;
+    }
+
+    // 4. First trigger -> show snackbar
+    log('first trigger -> showing snackbar', name: 'BackExit');
+    _lastHomeLoadedTime = now;
+
+    Get.closeAllSnackbars();
+    Get.rawSnackbar(
+      messageText: const Text(
+        'Press back again to exit',
+        style: TextStyle(color: Colors.white, fontSize: 14),
+        textAlign: TextAlign.center,
+      ),
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: Colors.black87,
+      margin: const EdgeInsets.all(16),
+      borderRadius: 12,
+      duration: _exitWindow,
+    );
+  }
+
+  Future<void> _exitScreen() async {
+    // Close the snackbar first (and wait for its exit animation)
+    if (Get.isSnackbarOpen) {
+      await Get.closeCurrentSnackbar();
+    }
+    Get.closeAllSnackbars(); // safety net for any queued ones
+
+    Get.back();
+    // If Get.back() doesn't leave the screen (root route), use:
+    // SystemNavigator.pop();
+  }
   // ────────────────────────────────────────────────────────────────
   // LOCATION
   // ────────────────────────────────────────────────────────────────

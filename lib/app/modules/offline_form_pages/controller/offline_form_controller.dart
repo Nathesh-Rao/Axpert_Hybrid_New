@@ -20,6 +20,7 @@ import '../../../core/common.dart';
 import '../../../data/services/connectivity/internet_connectivity.dart';
 import '../../../data/services/log/log_service.dart';
 import '../../webview/controller/webview_controller.dart';
+import '../auto_sync/offline_background_sync_service.dart';
 import '../db/db.dart';
 import '../db/offline_db_module.dart';
 import '../models/cached_save_item_model.dart';
@@ -322,18 +323,18 @@ class OfflineFormController extends GetxController {
   Future<void> onFormSubmit() async {
     if (isLoading.value) return;
 
-    // if (!await validateForm()) {
-    //   Get.snackbar(
-    //     "Missing Fields",
-    //     "Please fill all required fields before proceeding.",
-    //     backgroundColor: AppColors.accentRed,
-    //     colorText: Colors.white,
-    //     snackPosition: SnackPosition.BOTTOM,
-    //     margin: const EdgeInsets.all(12),
-    //     duration: const Duration(seconds: 2),
-    //   );
-    //   return;
-    // }
+    if (!await validateForm()) {
+      Get.snackbar(
+        "Missing Fields",
+        "Please fill all required fields before proceeding.",
+        backgroundColor: AppColors.accentRed,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(12),
+        duration: const Duration(seconds: 2),
+      );
+      return;
+    }
     final Map<String, dynamic> mainPayload = generateSubmitPayloadCachedSave();
     log(mainPayload.toString(), name: "mainpayload");
     final int mainRecId = await OfflineDbModule.savePayloadForQueue(
@@ -2576,5 +2577,226 @@ class OfflineFormController extends GetxController {
 
     cachedSaveQueItems[index].value = updater(cachedSaveQueItems[index].value);
     _sortQueueItems();
+  }
+
+  // ── Offline settings state ──────────────────────────────────────
+
+  void openOfflinesettings() {
+    Get.bottomSheet(
+      SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(Get.context!).size.height * 0.85,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: StatefulBuilder(
+              builder: (context, refresh) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Drag handle
+                    Center(
+                      child: Container(
+                        height: 4,
+                        width: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.grey300,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Header
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.darkBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.settings,
+                            color: AppColors.darkBlue,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Offline Settings",
+                                style: AppTextStyles.subtitle.copyWith(
+                                  color: AppColors.darkBlue,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                "Control how offline data is handled",
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.grey500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Tiles
+                    OfflineSettingTile(
+                      icon: Icons.sync_rounded,
+                      color: AppColors.primaryPurple,
+                      title: "Auto sync",
+                      subtitle: "Sync saved forms when internet is available",
+                      value: OfflineDbModule.autoSync,
+                      onChanged: (v) async {
+                        await OfflineBackgroundSyncService.instance.setAutoSync(
+                          enabled: v,
+                        );
+                        refresh(() {});
+                      },
+                    ),
+
+                    OfflineSettingTile(
+                      icon: Icons.download_for_offline_rounded,
+                      color: AppColors.accentCyan2,
+                      title: "Auto sync masters",
+                      subtitle: "Sync data sources when internet is available",
+                      value: OfflineDbModule.autoSyncMaster,
+                      onChanged: (v) async {
+                        await OfflineDbModule.toggleAutoSyncMaster();
+
+                        refresh(() {});
+                      },
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+      isScrollControlled: true,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      enterBottomSheetDuration: const Duration(milliseconds: 300),
+    );
+  }
+}
+
+class OfflineSettingTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const OfflineSettingTile({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.only(bottom: 20), // Reduced bottom margin
+      decoration: BoxDecoration(
+        // Removed the border for a cleaner, flatter look
+        color: value ? color.withValues(alpha: 0.05) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => onChanged(!value),
+          child: Padding(
+            // Tightened overall padding
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  padding: const EdgeInsets.all(8), // Smaller icon padding
+                  decoration: BoxDecoration(
+                    color: value ? color : color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18, // Reduced icon size
+                    color: value ? Colors.white : color,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: AppTextStyles.subtitle.copyWith(
+                          color: AppColors.grey900,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14, // Ensure font is compact
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        subtitle,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.grey500,
+                          fontSize: 12, // Slightly smaller subtitle
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Scaled down the switch to match the new minimal height
+                Transform.scale(
+                  scale: 0.75,
+                  child: Switch(
+                    value: value,
+                    onChanged: onChanged,
+                    thumbColor: const WidgetStatePropertyAll(Colors.white),
+                    trackColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? color
+                          : AppColors.grey300,
+                    ),
+                    trackOutlineColor: const WidgetStatePropertyAll(
+                      Colors.transparent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -48,6 +48,11 @@ class OfflineListingPage extends GetView<OfflineFormController> {
 
         actions: [
           IconButton(
+            onPressed: controller.openOfflinesettings,
+            icon: Icon(Icons.settings, color: AppColors.primaryPurple),
+            iconSize: 18.sp,
+          ),
+          IconButton(
             onPressed: Get.back,
             icon: Icon(
               CupertinoIcons.clear_circled_solid,

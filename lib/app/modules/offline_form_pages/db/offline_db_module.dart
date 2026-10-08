@@ -6,6 +6,7 @@ import 'dart:math' hide log;
 
 import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:intl/intl.dart';
 
@@ -15,6 +16,7 @@ import 'package:get/get.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import '../../../controller/global_controller.dart';
 import '../../../data/const/app_const.dart';
 import '../../../data/services/api/api_manger.dart';
@@ -29,7 +31,45 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 enum SubmitStatus { success, savedOffline, apiFailure, sqlFailure }
 
+enum CachedSaveStatus { success, queueEmpty, noSession, authFailed, failed }
+
+enum _BackgroundPushResult { success, authFailed, failed }
+
+enum CachedSaveStartResult { started, alreadyRunning }
+
+class CachedSaveResult {
+  final CachedSaveStatus status;
+  final int totalPushed;
+  final int totalRecords;
+  final int totalBatches;
+  final String message;
+
+  const CachedSaveResult({
+    required this.status,
+    required this.totalPushed,
+    required this.totalRecords,
+    required this.totalBatches,
+    required this.message,
+  });
+}
+
+class BackgroundPushResponse {
+  final bool success;
+  final bool authFailed;
+  final String rawResponse;
+
+  const BackgroundPushResponse({
+    required this.success,
+    required this.authFailed,
+    required this.rawResponse,
+  });
+}
+
 class OfflineDbModule {
+  static const String _cachedSaveLockName = 'CACHED_SAVE';
+  static const String _bgApiValidateSession = "AxAuth/api/v1/AxValidateSession";
+  static const String _bgApiSignin = "AxAuth/api/v1/Signin";
+  static const String _bgApiAxList = "AxList/api/v1/AxList";
   OfflineDbModule._();
   // static ServerConnections serverConnections = ServerConnections();
   static Database? _db;
@@ -44,6 +84,9 @@ class OfflineDbModule {
     bool current = StorageService.autoSync ?? false;
 
     bool newValue = !current;
+    // final bool applied = await OfflineBackgroundSyncService.instance
+    //     .setAutoSync(enabled: newValue);
+
     StorageService.setAutoSync(newValue);
 
     autoSync = newValue;
@@ -85,12 +128,21 @@ class OfflineDbModule {
 
     _db = await openDatabase(
       dbPath,
-      version: 11,
+      version: 12,
       onCreate: (db, _) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         const tag = "[OFFLINE_DB_UPGRADE_006]";
+
+        if (oldVersion < 12) {
+          await db.execute(OfflineDBConstants.CREATE_SYNC_LOCK_TABLE);
+
+          LogService.writeLog(
+            message: "[V12] offline_sync_lock table created.",
+          );
+        }
+
         if (oldVersion < 11) {
           try {
             await db.execute(OfflineDBConstants.ALTER_AUDIT_LOGS_ADD_STATUS);
@@ -250,6 +302,98 @@ class OfflineDbModule {
     await db.execute(OfflineDBConstants.CREATE_OFFLINE_USER_TABLE);
     await db.execute(OfflineDBConstants.CREATE_AUDIT_LOGS_TABLE);
     await db.execute(OfflineDBConstants.CREATE_CACHED_SAVE_QUEUE_TABLE);
+    await db.execute(OfflineDBConstants.CREATE_SYNC_LOCK_TABLE);
+  }
+
+  static Future<bool> tryAcquireCachedSaveLock({
+    required String owner,
+    Duration lease = const Duration(minutes: 30),
+  }) async {
+    const String tag = '[CACHED_SAVE_LOCK]';
+
+    final now = DateTime.now();
+    final expiresAt = now.add(lease);
+
+    return await _database.transaction<bool>((txn) async {
+      final rows = await txn.query(
+        OfflineDBConstants.TABLE_SYNC_LOCK,
+        where: '${OfflineDBConstants.COL_LOCK_NAME} = ?',
+        whereArgs: [_cachedSaveLockName],
+        limit: 1,
+      );
+
+      if (rows.isEmpty) {
+        await txn.insert(OfflineDBConstants.TABLE_SYNC_LOCK, {
+          OfflineDBConstants.COL_LOCK_NAME: _cachedSaveLockName,
+          OfflineDBConstants.COL_LOCK_OWNER: owner,
+          OfflineDBConstants.COL_LOCK_ACQUIRED_AT: now.toIso8601String(),
+          OfflineDBConstants.COL_LOCK_EXPIRES_AT: expiresAt.toIso8601String(),
+        });
+
+        await LogService.writeLog(
+          message: '$tag ACQUIRED owner=$owner expires=$expiresAt',
+        );
+
+        return true;
+      }
+
+      final row = rows.first;
+
+      final existingOwner =
+          row[OfflineDBConstants.COL_LOCK_OWNER]?.toString() ?? '';
+
+      final existingExpiryString =
+          row[OfflineDBConstants.COL_LOCK_EXPIRES_AT]?.toString() ?? '';
+
+      final existingExpiry = DateTime.tryParse(existingExpiryString);
+
+      final bool expired =
+          existingExpiry == null || existingExpiry.isBefore(now);
+
+      if (!expired) {
+        await LogService.writeLog(
+          message:
+              '$tag DENIED owner=$owner existingOwner=$existingOwner '
+              'expires=$existingExpiry',
+        );
+
+        return false;
+      }
+
+      // Existing lock is stale/expired.
+      await txn.update(
+        OfflineDBConstants.TABLE_SYNC_LOCK,
+        {
+          OfflineDBConstants.COL_LOCK_OWNER: owner,
+          OfflineDBConstants.COL_LOCK_ACQUIRED_AT: now.toIso8601String(),
+          OfflineDBConstants.COL_LOCK_EXPIRES_AT: expiresAt.toIso8601String(),
+        },
+        where: '${OfflineDBConstants.COL_LOCK_NAME} = ?',
+        whereArgs: [_cachedSaveLockName],
+      );
+
+      await LogService.writeLog(
+        message: '$tag RECLAIMED expired lock owner=$owner',
+      );
+
+      return true;
+    });
+  }
+
+  static Future<void> releaseCachedSaveLock({required String owner}) async {
+    const String tag = '[CACHED_SAVE_LOCK]';
+
+    final deleted = await _database.delete(
+      OfflineDBConstants.TABLE_SYNC_LOCK,
+      where:
+          '${OfflineDBConstants.COL_LOCK_NAME} = ? AND '
+          '${OfflineDBConstants.COL_LOCK_OWNER} = ?',
+      whereArgs: [_cachedSaveLockName, owner],
+    );
+
+    await LogService.writeLog(
+      message: '$tag RELEASE owner=$owner deleted=$deleted',
+    );
   }
 
   static Future<void> maintenanceDeleteOldLogs() async {
@@ -1033,6 +1177,7 @@ class OfflineDbModule {
       ${OfflineDBConstants.COL_DATASOURCE_NAME} = ?
     ''',
       whereArgs: [username, projectName, transId, datasource],
+      orderBy: '${OfflineDBConstants.COL_ID} DESC',
       limit: 1,
     );
 
@@ -8664,6 +8809,1012 @@ class OfflineDbModule {
       LogService.writeLog(
         message: "$_cachedSaveTag [DEBUG FILE] Failed to write: $e",
       );
+    }
+  }
+
+  //////////////////////////////////////////////
+
+  static String getGUID() {
+    final uuid = Uuid();
+    // Generate a v4 (random) GUID
+    String guid = uuid.v4();
+    return guid;
+  }
+
+  static String generateMd5(String input) {
+    return md5.convert(utf8.encode(input)).toString();
+  }
+
+  static Future<bool> ensureValidSession() async {
+    if (await validateCurrentSessionBackgroundSafe()) return true;
+    return await silentReloginBackgroundSafe();
+  }
+
+  static Future<Map<String, String>?> _getLastOfflineUserFull() async {
+    final res = await _database.query(
+      OfflineDBConstants.TABLE_OFFLINE_USER,
+      orderBy: '${OfflineDBConstants.COL_LAST_LOGIN_AT} DESC',
+      limit: 1,
+    );
+    if (res.isEmpty) return null;
+    return {
+      'username': res.first[OfflineDBConstants.COL_USERNAME] as String,
+      'projectName': res.first[OfflineDBConstants.COL_PROJECT_NAME] as String,
+      // NOTE: currently plaintext, despite the column name — required for relogin below.
+      'password':
+          res.first[OfflineDBConstants.COL_PASSWORD_HASH] as String? ?? '',
+    };
+  }
+
+  static Future<bool> validateCurrentSessionBackgroundSafe() async {
+    const tag = '[SESSION_VALIDATE_BG]';
+    try {
+      final sessionId = StorageService.sessionId ?? '';
+      final token = StorageService.token ?? '';
+      if (sessionId.isEmpty) {
+        await LogService.writeLog(message: '$tag No session id stored.');
+        return false;
+      }
+
+      final url = Uri.parse(
+        await AppConst.getFullARMUrl(_bgApiValidateSession),
+      );
+      final client = http.Client();
+      try {
+        final response = await client
+            .post(
+              url,
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode({'ARMSessionId': sessionId}),
+            )
+            .timeout(const Duration(seconds: 20));
+
+        // Mirrors postDsToServer: only 200/206 carry a real body to parse.
+        // Everything else (401/400/500/404/other) is a failure, full stop —
+        // we don't need the "sessionid is not valid" message-sniffing that
+        // postDsToServer does, since that's only there to trigger the GetX
+        // sign-out dialog, which has no place in this isolate.
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          await LogService.writeLog(
+            message:
+                '$tag statusCode=${response.statusCode} body=${response.body}',
+          );
+          return false;
+        }
+
+        if (response.body.isEmpty) {
+          await LogService.writeLog(message: '$tag Empty 200 body.');
+          return false;
+        }
+
+        final decoded = jsonDecode(response.body);
+        final bool isValid =
+            decoded is Map && decoded['result']?['success'] == true;
+        await LogService.writeLog(message: '$tag isValid=$isValid');
+        return isValid;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      await LogService.writeLog(message: '$tag EXCEPTION: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> silentReloginBackgroundSafe() async {
+    const tag = '[SILENT_RELOGIN_BG]';
+    try {
+      final creds = await _getLastOfflineUserFull();
+      if (creds == null || (creds['password'] ?? '').isEmpty) {
+        await LogService.writeLog(message: '$tag No stored credentials.');
+        return false;
+      }
+
+      final String username = creds['username']!;
+      final String projectName = creds['projectName']!;
+      final String storedPassword = creds['password']!;
+
+      final signInBody = {
+        "appname": projectName,
+        "username": username,
+        "Seed": AppConst.SEED,
+        "password": generateMd5(AppConst.SEED + generateMd5(storedPassword)),
+        "Language": "English",
+        "SessionId": getGUID(),
+        "Globalvars": false,
+        "ClearPreviousSession": true,
+      };
+
+      final url = Uri.parse(await AppConst.getFullARMUrl(_bgApiSignin));
+      final client = http.Client();
+      try {
+        final response = await client
+            .post(
+              url,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(signInBody),
+            )
+            .timeout(const Duration(seconds: 20));
+
+        // No bearer token needed here — mirrors postToServer's isBearer:false
+        // default for signin, since no session exists yet at this point.
+
+        if (response.statusCode != 200) {
+          await LogService.writeLog(
+            message:
+                '$tag statusCode=${response.statusCode} body=${response.body}',
+          );
+          return false;
+        }
+
+        if (response.body.isEmpty) {
+          await LogService.writeLog(message: '$tag Empty response body.');
+          return false;
+        }
+
+        Map<String, dynamic> json;
+        try {
+          json = jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (e) {
+          await LogService.writeLog(message: '$tag Non-JSON response: $e');
+          return false;
+        }
+
+        final result = json['result'];
+        if (result is! Map) {
+          await LogService.writeLog(
+            message: '$tag Missing/invalid result block.',
+          );
+          return false;
+        }
+
+        final bool isSuccess =
+            result['success'].toString().toLowerCase() == 'true';
+        if (!isSuccess) {
+          await LogService.writeLog(
+            message: '$tag Rejected: ${result['message']}',
+          );
+          return false;
+        }
+
+        if (result['message'] != 'Login Successful.') {
+          await LogService.writeLog(
+            message: '$tag Needs extra step: ${result['message']}',
+          );
+          return false;
+        }
+        StorageService.saveUserSession(
+          token: result['token'].toString(),
+          sessionId: result['ARMSessionId'].toString(),
+          userName: username,
+          nickName: result['nickname']?.toString() ?? username,
+          projectname: projectName,
+        );
+
+        await saveUser(
+          projectName: projectName,
+          username: username,
+          passwordHash: storedPassword,
+          loginResult: json,
+        );
+
+        await logAudit(
+          action: 'AUTO_RELOGIN',
+          remarks: 'Session refreshed in background for $username.',
+        );
+        await LogService.writeLog(message: '$tag SUCCESS.');
+        return true;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      await LogService.writeLog(message: '$tag EXCEPTION: $e');
+      return false;
+    }
+  }
+
+  static Future<CachedSaveResult> runCachedSave({
+    void Function(String message)? onProgress,
+    void Function(CachedSaveItemModel item)? onQueueCreated,
+    void Function(
+      String queueId,
+      CachedSaveItemModel Function(CachedSaveItemModel model) update,
+    )?
+    onQueueStatusChanged,
+    void Function(int totalRecords, int totalBatches)? onTotalsCalculated,
+  }) async {
+    const String tag = "[CACHED_SAVE_CORE]";
+
+    final int batchSize = OfflineConfigService.getCachedBatchSize();
+
+    await LogService.writeLog(message: "$tag START batchSize=$batchSize");
+
+    final scope = await _getLastOfflineUserScope();
+
+    if (scope == null) {
+      return const CachedSaveResult(
+        status: CachedSaveStatus.noSession,
+        totalPushed: 0,
+        totalRecords: 0,
+        totalBatches: 0,
+        message: "No user session found",
+      );
+    }
+
+    final String username = scope['username']!;
+    final String projectName = scope['projectName']!;
+
+    final Map<int, List<int>> batches = await _buildBatchMap(
+      username: username,
+      projectName: projectName,
+      batchSize: batchSize,
+    );
+
+    if (batches.isEmpty) {
+      await LogService.writeLog(
+        message: "$tag Nothing to push — queue is empty.",
+      );
+      return const CachedSaveResult(
+        status: CachedSaveStatus.queueEmpty,
+        totalPushed: 0,
+        totalRecords: 0,
+        totalBatches: 0,
+        message: "Nothing to push — queue is empty.",
+      );
+    }
+
+    final int totalRecords = batches.values.fold(
+      0,
+      (sum, ids) => sum + ids.length,
+    );
+    final int totalBatches = batches.length;
+
+    onTotalsCalculated?.call(totalRecords, totalBatches);
+    onProgress?.call(
+      "Preparing $totalRecords record(s) in $totalBatches batch(es)...",
+    );
+
+    final List<QueuedPayloadData> payloads = [];
+    int batchNumber = 0;
+
+    for (final entry in batches.entries) {
+      batchNumber++;
+      final ids = entry.value;
+
+      onProgress?.call(
+        "Building Payload $batchNumber/$totalBatches — ${ids.length} record(s)...",
+      );
+
+      final payload = await _buildPayloadOnlyBackgroundSafe(
+        ids: ids,
+        username: username,
+        projectName: projectName,
+        onProgress: onProgress,
+        onQueueCreated: onQueueCreated,
+      );
+
+      if (payload == null) {
+        // This batch's ids were claimed as QUEUED but the build failed —
+        // revert THIS batch's ids, and everything already built-but-not-
+        // pushed in `payloads`, and everything not yet attempted at all
+        // (the remaining entries in `batches` past this point).
+        await _revertUnpushedBatches(
+          tag: tag,
+          builtButUnpushed: payloads,
+          notYetBuiltIds: ids,
+          remainingBatches: batches.values.skip(batchNumber),
+          onQueueStatusChanged: onQueueStatusChanged,
+        );
+
+        return CachedSaveResult(
+          status: CachedSaveStatus.failed,
+          totalPushed: 0,
+          totalRecords: totalRecords,
+          totalBatches: totalBatches,
+          message: "Failed while building batch $batchNumber.",
+        );
+      }
+
+      payloads.add(payload);
+    }
+
+    int totalPushed = 0;
+
+    for (int i = 0; i < payloads.length; i++) {
+      final payload = payloads[i];
+
+      onProgress?.call("Uploading batch ${i + 1}/${payloads.length}...");
+
+      onQueueStatusChanged?.call(
+        payload.queueId,
+        (model) => model.copyWith(
+          submissionStatus: QueueSubmissionStatus.sending,
+          smallStatusMessage: "Uploading...",
+        ),
+      );
+
+      final pushResult = await _pushPayloadBackgroundSafe(
+        payload: payload,
+        username: username,
+        projectName: projectName,
+        onProgress: onProgress,
+        onQueueStatusChanged: onQueueStatusChanged,
+      );
+
+      if (pushResult == _BackgroundPushResult.authFailed) {
+        onQueueStatusChanged?.call(
+          payload.queueId,
+          (model) => model.copyWith(
+            submissionStatus: QueueSubmissionStatus.error,
+            smallStatusMessage: "Session expired.",
+          ),
+        );
+
+        // payloads[i] was already reverted inside _pushPayloadBackgroundSafe.
+        // Revert everything AFTER i that was built but never attempted.
+        await _revertUnpushedBatches(
+          tag: tag,
+          builtButUnpushed: payloads.sublist(i + 1),
+          onQueueStatusChanged: onQueueStatusChanged,
+        );
+
+        return CachedSaveResult(
+          status: CachedSaveStatus.authFailed,
+          totalPushed: totalPushed,
+          totalRecords: totalRecords,
+          totalBatches: totalBatches,
+          message: "Session expired.",
+        );
+      }
+
+      if (pushResult != _BackgroundPushResult.success) {
+        onQueueStatusChanged?.call(
+          payload.queueId,
+          (model) => model.copyWith(
+            submissionStatus: QueueSubmissionStatus.error,
+            smallStatusMessage: "API Upload Failed",
+          ),
+        );
+
+        await _revertUnpushedBatches(
+          tag: tag,
+          builtButUnpushed: payloads.sublist(i + 1),
+          onQueueStatusChanged: onQueueStatusChanged,
+        );
+
+        return CachedSaveResult(
+          status: CachedSaveStatus.failed,
+          totalPushed: totalPushed,
+          totalRecords: totalRecords,
+          totalBatches: totalBatches,
+          message: "Failed while uploading batch ${i + 1}.",
+        );
+      }
+
+      onQueueStatusChanged?.call(
+        payload.queueId,
+        (model) => model.copyWith(
+          submissionStatus: QueueSubmissionStatus.pending,
+          smallStatusMessage: "waiting for FCM",
+        ),
+      );
+
+      totalPushed += payload.axmRecIds.length;
+    }
+
+    onProgress?.call("Pushing audit logs...");
+
+    await pushAllAuditLogsToQueue(isInternetAvailable: true);
+
+    await LogService.writeLog(
+      message: "$tag DONE — pushed $totalPushed/$totalRecords records.",
+    );
+
+    return CachedSaveResult(
+      status: CachedSaveStatus.success,
+      totalPushed: totalPushed,
+      totalRecords: totalRecords,
+      totalBatches: totalBatches,
+      message:
+          "Uploaded $totalPushed record(s). Waiting for server confirmation.",
+    );
+  }
+
+  static Future<void> _revertUnpushedBatches({
+    required String tag,
+    required List<QueuedPayloadData> builtButUnpushed,
+    List<int>? notYetBuiltIds,
+    Iterable<List<int>>? remainingBatches,
+    void Function(
+      String queueId,
+      CachedSaveItemModel Function(CachedSaveItemModel model) update,
+    )?
+    onQueueStatusChanged,
+  }) async {
+    final List<int> allIdsToRevert = [];
+
+    for (final payload in builtButUnpushed) {
+      allIdsToRevert.addAll(payload.axmRecIds);
+
+      onQueueStatusChanged?.call(
+        payload.queueId,
+        (model) => model.copyWith(
+          submissionStatus: QueueSubmissionStatus.error,
+          smallStatusMessage: "Cancelled — will retry next sync",
+        ),
+      );
+
+      try {
+        if (await payload.file.exists()) {
+          await payload.file.delete();
+        }
+      } catch (e) {
+        await LogService.writeLog(
+          message:
+              "$tag [REVERT] Failed to delete orphaned file "
+              "for queue_id=${payload.queueId}: $e",
+        );
+      }
+    }
+
+    if (notYetBuiltIds != null) {
+      allIdsToRevert.addAll(notYetBuiltIds);
+    }
+
+    if (remainingBatches != null) {
+      for (final ids in remainingBatches) {
+        allIdsToRevert.addAll(ids);
+      }
+    }
+
+    if (allIdsToRevert.isEmpty) return;
+
+    final int reverted = await _batchUpdateStatus(
+      allIdsToRevert,
+      OfflineDBConstants.RECORD_STATUS_ERROR,
+    );
+
+    await LogService.writeLog(
+      message:
+          "$tag [REVERT] Reverted $reverted/${allIdsToRevert.length} "
+          "claimed record(s) back to ERROR after early stop. ids=$allIdsToRevert",
+    );
+
+    await logAudit(
+      action: tag,
+      isError: true,
+      remarks:
+          "Sync run stopped early — reverted ${allIdsToRevert.length} "
+          "claimed record(s) back to ERROR for retry on next sync.",
+    );
+  }
+
+  static Future<_BackgroundPushResult> _pushPayloadBackgroundSafe({
+    required QueuedPayloadData payload,
+    required String username,
+    required String projectName,
+    void Function(String message)? onProgress,
+    void Function(
+      String queueId,
+      CachedSaveItemModel Function(CachedSaveItemModel model) update,
+    )?
+    onQueueStatusChanged,
+  }) async {
+    try {
+      final requestBody = await payload.file.readAsString();
+
+      onProgress?.call("Uploading ${payload.axmRecIds.length} record(s)...");
+
+      final response = await _backgroundPushToQueue(requestBody: requestBody);
+
+      if (response.authFailed) {
+        // Release the claim so these records are retried once the user
+        // re-authenticates, instead of being stuck as QUEUED forever.
+        await _batchUpdateStatus(
+          payload.axmRecIds,
+          OfflineDBConstants.RECORD_STATUS_ERROR,
+        );
+
+        await logAudit(
+          action: "[CACHED_SAVE_BG]",
+          isError: true,
+          response: response.rawResponse,
+          remarks:
+              "Queue ${payload.queueId} auth failed — "
+              "${payload.axmRecIds.length} record(s) reverted to ERROR.",
+        );
+
+        return _BackgroundPushResult.authFailed;
+      }
+
+      if (!response.success) {
+        // Same here — push failed, release the claim.
+        await _batchUpdateStatus(
+          payload.axmRecIds,
+          OfflineDBConstants.RECORD_STATUS_ERROR,
+        );
+
+        await logAudit(
+          action: "[CACHED_SAVE_BG]",
+          isError: true,
+          response: response.rawResponse,
+          remarks:
+              "Queue ${payload.queueId} failed — "
+              "${payload.axmRecIds.length} record(s) reverted to ERROR.",
+        );
+
+        return _BackgroundPushResult.failed;
+      }
+
+      await _saveCachedSaveQueueRecord(
+        queueId: payload.queueId,
+        username: username,
+        projectName: projectName,
+        axmRecIds: payload.axmRecIds,
+        sourceTable: OfflineDBConstants.TABLE_PENDING_REQUESTS,
+        payloadsCount: payload.axmRecIds.length,
+        queueResponse: response.rawResponse,
+      );
+
+      // No longer needed here if the claim already set QUEUED upstream —
+      // but harmless to leave as a no-op confirmation if you're not sure
+      // the claim step is fully wired in yet.
+      await _batchUpdateStatus(
+        payload.axmRecIds,
+        OfflineDBConstants.RECORD_STATUS_QUEUED,
+      );
+
+      await logAudit(
+        action: "[CACHED_SAVE_BG]",
+        remarks: "Queue ${payload.queueId} pushed.",
+      );
+
+      return _BackgroundPushResult.success;
+    } catch (e, st) {
+      // Exception during read/upload — release the claim too, otherwise
+      // a network blip permanently strands these records as QUEUED.
+      try {
+        await _batchUpdateStatus(
+          payload.axmRecIds,
+          OfflineDBConstants.RECORD_STATUS_ERROR,
+        );
+      } catch (_) {
+        // best-effort; don't let a revert failure mask the original exception
+      }
+
+      await LogService.writeLog(
+        message:
+            "[CACHED_SAVE_BG] Push exception: $e\n$st — "
+            "${payload.axmRecIds.length} record(s) reverted to ERROR.",
+      );
+
+      return _BackgroundPushResult.failed;
+    } finally {
+      try {
+        if (await payload.file.exists()) {
+          await payload.file.delete();
+        }
+      } catch (_) {}
+    }
+  }
+
+  static Future<BackgroundPushResponse> _backgroundPushToQueue({
+    required String requestBody,
+  }) async {
+    final token = StorageService.token ?? "";
+
+    if (token.isEmpty) {
+      return const BackgroundPushResponse(
+        success: false,
+        authFailed: true,
+        rawResponse: "No authentication token",
+      );
+    }
+
+    final url = Uri.parse(
+      await AppConst.getFullARMUrl(ApiEndpoints.ARM_PUSH_TO_QUEUE),
+    );
+
+    final client = http.Client();
+
+    try {
+      final response = await client.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: requestBody,
+      );
+
+      final body = response.body;
+
+      bool success = false;
+
+      try {
+        final decoded = jsonDecode(body);
+
+        if (decoded is Map<String, dynamic>) {
+          final result = decoded['result'];
+
+          if (result is Map<String, dynamic>) {
+            success = result['success'] == true;
+          }
+        }
+      } catch (_) {}
+
+      if (response.statusCode == 401 ||
+          response.statusCode == 403 ||
+          _isAuthenticationError(body)) {
+        return BackgroundPushResponse(
+          success: false,
+          authFailed: true,
+          rawResponse: body,
+        );
+      }
+
+      return BackgroundPushResponse(
+        success: success,
+        authFailed: false,
+        rawResponse: body,
+      );
+    } catch (e) {
+      return BackgroundPushResponse(
+        success: false,
+        authFailed: false,
+        rawResponse: e.toString(),
+      );
+    } finally {
+      client.close();
+    }
+  }
+
+  static Future<QueuedPayloadData?> _buildPayloadOnlyBackgroundSafe({
+    required List<int> ids,
+    required String username,
+    required String projectName,
+    void Function(String message)? onProgress,
+    void Function(CachedSaveItemModel item)? onQueueCreated,
+  }) async {
+    final String sessionId = StorageService.sessionId ?? "";
+    // final String sessionId = await AppStorage().retrieveValue(
+    //       AppStorage.SESSIONID,
+    //     ) ??
+    //     "";
+
+    final String authToken = StorageService.token ?? "";
+
+    final bool isTraceOn = StorageService.isLogEnabled ?? false;
+
+    if (sessionId.isEmpty) {
+      return null;
+    }
+
+    final String sql = List.filled(ids.length, '?').join(',');
+
+    final List<Map<String, dynamic>> rows = await _database.query(
+      OfflineDBConstants.TABLE_PENDING_REQUESTS,
+      columns: [OfflineDBConstants.COL_ID],
+      where: '${OfflineDBConstants.COL_ID} IN ($sql)',
+      whereArgs: ids,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    final String queueId = createAxmQueueId();
+
+    final List<int> axmRecIds = [];
+
+    try {
+      final File? payloadFile = await _buildQueuePayloadFile(
+        queueId: queueId,
+        sessionId: sessionId,
+        authToken: authToken,
+        projectName: projectName,
+        username: username,
+        isTraceOn: isTraceOn,
+        rows: rows,
+        axmRecIds: axmRecIds,
+        onProgress: onProgress ?? (_) {},
+      );
+
+      if (payloadFile == null || axmRecIds.isEmpty) {
+        return null;
+      }
+
+      final item = CachedSaveItemModel(
+        submissionStatus: QueueSubmissionStatus.created,
+        qId: queueId,
+        totalItems: axmRecIds.length,
+        successItems: 0,
+        failedItems: 0,
+        fcmRecived: false,
+        smallStatusMessage: "Waiting to upload...",
+      );
+
+      onQueueCreated?.call(item);
+
+      return QueuedPayloadData(
+        file: payloadFile,
+        queueId: queueId,
+        axmRecIds: axmRecIds,
+      );
+    } catch (e) {
+      await LogService.writeLog(
+        message: "[CACHED_SAVE_CORE] Build exception: $e",
+      );
+
+      return null;
+    }
+  }
+
+  static Future<List<QueueResolveResultModel>>
+  resolvePendingCachedSaveQueueBatchesBackgroundSafe({
+    void Function(String message)? onProgress,
+  }) async {
+    const String tag = "[RESOLVE_PENDING_QUEUE_BATCH_BG]";
+    final List<QueueResolveResultModel> results = [];
+
+    onProgress?.call("Checking pending queue batch(es) from previous run...");
+
+    final scope = await _getLastOfflineUserScope();
+    if (scope == null) {
+      await LogService.writeLog(
+        message: "$tag No user scope found — aborting.",
+      );
+      return results;
+    }
+
+    final String username = scope['username']!;
+    final String projectName = scope['projectName']!;
+
+    await LogService.writeLog(
+      message: "$tag START user=$username project=$projectName",
+    );
+
+    final List<Map<String, dynamic>> queueRows = await _database.query(
+      OfflineDBConstants.TABLE_CACHED_SAVE_QUEUE,
+      columns: [
+        OfflineDBConstants.COL_QUEUE_ID,
+        OfflineDBConstants.COL_SOURCE_TABLE,
+      ],
+      where:
+          '''
+  ${OfflineDBConstants.COL_STATUS} IN (
+    ${OfflineDBConstants.QUEUE_STATUS_PENDING}
+  )
+  AND ${OfflineDBConstants.COL_USERNAME}     = ?
+  AND ${OfflineDBConstants.COL_PROJECT_NAME} = ?
+  ''',
+      whereArgs: [username, projectName],
+      orderBy: OfflineDBConstants.COL_CREATED_AT,
+    );
+
+    if (queueRows.isEmpty) {
+      onProgress?.call(
+        "No PENDING cached_save_queue rows found — nothing to resolve.",
+      );
+      await LogService.writeLog(
+        message: "$tag No PENDING cached_save_queue rows found.",
+      );
+      return results;
+    }
+
+    final Map<String, String> sourceTableByQueueId = {
+      for (final r in queueRows)
+        if (r[OfflineDBConstants.COL_QUEUE_ID] != null)
+          r[OfflineDBConstants.COL_QUEUE_ID].toString():
+              (r[OfflineDBConstants.COL_SOURCE_TABLE]?.toString() ??
+              OfflineDBConstants.TABLE_PENDING_REQUESTS),
+    };
+
+    final List<String> queueIds = sourceTableByQueueId.keys.toList();
+
+    onProgress?.call("Found ${queueIds.length} PENDING queue(s) to resolve.");
+    await LogService.writeLog(
+      message:
+          "$tag Found ${queueIds.length} queue(s), "
+          "sources=${sourceTableByQueueId.values.toSet().toList()} queueIds=$queueIds",
+    );
+
+    final String sessionId = StorageService.sessionId ?? "";
+    final String authToken = StorageService.token ?? "";
+
+    final List<Map<String, dynamic>> rows =
+        await _getActiveMessageDataBatchBackgroundSafe(
+          queueIds: queueIds,
+          sessionId: sessionId,
+          authToken: authToken,
+        );
+
+    if (rows.isEmpty) {
+      onProgress?.call(
+        "Server returned no rows — queues left as-is, will retry next time.",
+      );
+      await LogService.writeLog(
+        message: "$tag Batch API returned no rows for $queueIds.",
+      );
+
+      for (final String queueId in queueIds) {
+        final String sourceTable =
+            sourceTableByQueueId[queueId] ??
+            OfflineDBConstants.TABLE_PENDING_REQUESTS;
+        final result = await _handleUnresolvableQueue(
+          queueId: queueId,
+          sourceTable: sourceTable,
+          tag: tag,
+        );
+        results.add(result);
+      }
+      return results;
+    }
+
+    final Map<String, Map<String, dynamic>> rowsByMsgType = {
+      for (final r in rows)
+        if (r['msgtype'] != null) r['msgtype'].toString(): r,
+    };
+
+    onProgress?.call(
+      "Server returned ${rows.length} row(s) for ${queueIds.length} queue(s).",
+    );
+    await LogService.writeLog(
+      message:
+          "$tag Server returned ${rows.length} row(s), "
+          "msgtypes_returned=${rowsByMsgType.keys.toList()}",
+    );
+
+    for (final String queueId in queueIds) {
+      final Map<String, dynamic>? row = rowsByMsgType[queueId];
+      final String sourceTable =
+          sourceTableByQueueId[queueId] ??
+          OfflineDBConstants.TABLE_PENDING_REQUESTS;
+
+      if (row == null) {
+        await LogService.writeLog(
+          message:
+              "$tag queue_id=$queueId — no server row. Checking age to decide retry vs reset.",
+        );
+        onProgress?.call("queue_id=$queueId — checking if expired...");
+
+        final result = await _handleUnresolvableQueue(
+          queueId: queueId,
+          sourceTable: sourceTable,
+          tag: tag,
+        );
+        results.add(result);
+
+        onProgress?.call(
+          result.isNotFound
+              ? "queue_id=$queueId — under expiry window, will retry next time."
+              : "queue_id=$queueId — expired, records reset for re-push.",
+        );
+        continue;
+      }
+
+      onProgress?.call(
+        "Resolving queue_id=$queueId (sourceTable=$sourceTable)...",
+      );
+
+      QueueResolveResultModel result;
+      if (sourceTable == OfflineDBConstants.TABLE_AUDIT_LOGS) {
+        result = await _resolveSingleAuditQueueFromRow(
+          queueId: queueId,
+          row: row,
+          tag: tag,
+        );
+      } else {
+        result = await _resolveSingleQueueFromRow(
+          queueId: queueId,
+          row: row,
+          tag: tag,
+        );
+      }
+
+      results.add(result);
+
+      onProgress?.call(
+        "queue_id=$queueId resolved -> ${result.statusLabel} "
+        "(success=${result.successCount} failed=${result.failedCount})",
+      );
+      await LogService.writeLog(
+        message:
+            "$tag queue_id=$queueId resolved -> status=${result.statusLabel} "
+            "success=${result.successCount} failed=${result.failedCount}",
+      );
+    }
+
+    onProgress?.call("Done — resolved ${results.length} queue(s).");
+    await LogService.writeLog(
+      message:
+          "$tag DONE — processed ${queueIds.length} queue(s). "
+          "results=${results.map((r) => '${r.queueId}:${r.statusLabel}').toList()}",
+    );
+
+    return results;
+  }
+
+  static Future<List<Map<String, dynamic>>>
+  _getActiveMessageDataBatchBackgroundSafe({
+    required List<String> queueIds,
+    required String sessionId,
+    required String authToken,
+  }) async {
+    const String tag = "[GET_ACTIVE_MSG_BATCH_BG]";
+    const String dsName = "ds_mobile_axactivemsg";
+
+    try {
+      final bool isTraceOn = StorageService.isLogEnabled ?? false;
+
+      final Map<String, dynamic> body = {
+        "ARMSessionId": sessionId,
+        "action": "view",
+        "ADSNames": [dsName],
+        "trace": isTraceOn,
+        "pageno": 1,
+        "pagesize": 0,
+        "getallrecordscount": false,
+        "CachePermissions": true,
+        "sqlparams": {"pmsgtypes": queueIds.join(","), "pdelimiter": ","},
+      };
+
+      final url = Uri.parse(await AppConst.getFullARMUrl(_bgApiAxList));
+      final client = http.Client();
+
+      String serverResponse;
+      try {
+        final response = await client
+            .post(
+              url,
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $authToken',
+              },
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          await LogService.writeLog(
+            message:
+                '$tag statusCode=${response.statusCode} body=${response.body}',
+          );
+          return [];
+        }
+        serverResponse = response.body;
+      } finally {
+        client.close();
+      }
+
+      if (serverResponse.isEmpty) return [];
+
+      final decoded = jsonDecode(serverResponse);
+      if (decoded is! Map<String, dynamic>) return [];
+
+      final result = decoded['result'];
+      if (result is! Map<String, dynamic> || result['success'] != true)
+        return [];
+
+      final dsWrappers = result['data'];
+      if (dsWrappers is! List) return [];
+
+      for (final wrapper in dsWrappers) {
+        if (wrapper is Map<String, dynamic> && wrapper['adsname'] == dsName) {
+          final rows = wrapper['data'];
+          if (rows is List) {
+            return rows.cast<Map<String, dynamic>>();
+          }
+        }
+      }
+
+      return [];
+    } catch (e) {
+      await LogService.writeLog(message: '$tag EXCEPTION: $e');
+      return [];
     }
   }
 }

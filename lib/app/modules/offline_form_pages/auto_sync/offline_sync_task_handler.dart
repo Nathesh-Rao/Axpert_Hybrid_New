@@ -7,7 +7,9 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../../data/services/log/log_service.dart';
+import '../../../data/services/storage/storage_service.dart';
 import '../db/db.dart';
+import 'sync_alert_notifier.dart';
 
 const String _tag = '[FG_SYNC_TASK]';
 
@@ -61,6 +63,8 @@ class OfflineSyncTaskHandler extends TaskHandler {
       'msg': 'onStart fired in isolate',
     });
     await GetStorage.init();
+    await StorageService.init();
+    await SyncAlertNotifier.init();
     _armUrl = await FlutterForegroundTask.getData<String>(key: 'armUrl') ?? '';
     _intervalMinutes =
         await FlutterForegroundTask.getData<int>(key: 'intervalMinutes') ?? 0;
@@ -76,11 +80,15 @@ class OfflineSyncTaskHandler extends TaskHandler {
           '$_tag onStart — interval: ${_intervalMinutes}min | armUrl: $_armUrl',
     );
 
-    await _ensureDbInitialized();
-    await Future.delayed(const Duration(seconds: 3));
-    await _runSyncCycle();
+    try {
+      await _ensureDbInitialized();
+      await Future.delayed(const Duration(seconds: 3));
+      await _runSyncCycle();
 
-    _startTimer();
+      _startTimer();
+    } catch (e, st) {
+      log('$e Error occured. ${st.toString()}', name: _tag, stackTrace: st);
+    }
   }
 
   @override
@@ -138,15 +146,113 @@ class OfflineSyncTaskHandler extends TaskHandler {
 
   // ── Core sync cycle ────────────────────────────────────────────────────────
 
+  // Future<void> _runSyncCycle() async {
+  //   _isCycleRunning = true;
+
+  //   try {
+  //     // await GetStorage.init();
+
+  //     // 1. Internet check
+  //     if (!await _checkInternet()) {
+  //       LogService.writeLog(message: '$_tag No internet — skipping cycle.');
+  //       _updateNotification(
+  //         title: '📡 Sync Waiting',
+  //         text: 'No connection — will retry in ${_intervalMinutes}min',
+  //       );
+  //       FlutterForegroundTask.sendDataToMain({
+  //         SyncDataKeys.event: SyncDataKeys.evtNoInternet,
+  //       });
+  //       return;
+  //     }
+  //     final int pending = await OfflineDbModule.getPendingCount();
+  //     if (pending == 0) {
+  //       LogService.writeLog(
+  //         message: '$_tag Queue empty — nothing to push this cycle.',
+  //       );
+  //       _updateNotification(
+  //         title: '🔵 Sync Service Active',
+  //         text: 'No pending records — next check in ${_intervalMinutes}min',
+  //       );
+  //       return;
+  //     }
+
+  //     _updateNotification(
+  //       title: '🔄 Syncing',
+  //       text: 'Found $pending records — starting upload...',
+  //     );
+  //     LogService.writeLog(
+  //       message: '$_tag Starting push cycle. Pending: $pending',
+  //     );
+
+  //     final String result = await OfflineDbModule.backgroundPushPendingQueue(
+  //       armUrl: _armUrl,
+  //       onProgress: (current, total) {
+  //         _updateNotification(
+  //           title: '🔄 Syncing',
+  //           text: 'Uploading $current / $total records...',
+  //         );
+  //         FlutterForegroundTask.sendDataToMain({
+  //           SyncDataKeys.event: SyncDataKeys.evtProgress,
+  //           SyncDataKeys.current: current,
+  //           SyncDataKeys.total: total,
+  //         });
+  //       },
+  //     );
+
+  //     LogService.writeLog(message: '$_tag Push done. Result: $result');
+  //     if (result == '__AUTH_FAILED__') {
+  //       _updateNotification(
+  //         title: '🔴 Session Expired',
+  //         text: 'Please log in again to continue syncing.',
+  //       );
+  //       FlutterForegroundTask.sendDataToMain({
+  //         SyncDataKeys.event: SyncDataKeys.evtAuthFailed,
+  //       });
+  //       return; // ← skip the evtDone block entirely
+  //     }
+  //     // 5. Post-push — NEVER stop service here.
+  //     //    User may save new offline records before the next cycle.
+  //     //    Just update notification + report to main isolate.
+  //     //    Next timer cycle will re-check the queue.
+  //     final int remaining = await OfflineDbModule.getPendingCount();
+  //     final String? lastTs = await OfflineDbModule.getLastSyncedTimestamp();
+
+  //     _updateNotification(
+  //       title: remaining == 0 ? '✅ Sync Complete' : '⚠️ Sync Partial',
+  //       text: remaining == 0
+  //           ? 'Last sync: ${_formatTime(DateTime.parse(lastTs ?? DateTime.now().toIso8601String()).toLocal())} — next check in ${_intervalMinutes}min'
+  //           : '$remaining records pending — retrying in ${_intervalMinutes}min',
+  //     );
+
+  //     FlutterForegroundTask.sendDataToMain({
+  //       SyncDataKeys.event: SyncDataKeys.evtDone,
+  //       SyncDataKeys.result: result,
+  //       SyncDataKeys.pendingCount: remaining,
+  //       SyncDataKeys.lastSyncedAt: lastTs ?? '',
+  //     });
+  //   } catch (e) {
+  //     LogService.writeLog(message: '$_tag Cycle FAILED: $e');
+  //     _updateNotification(
+  //       title: '🔴 Sync Error',
+  //       text: 'Sync failed — retrying in ${_intervalMinutes}min',
+  //     );
+  //     FlutterForegroundTask.sendDataToMain({
+  //       SyncDataKeys.event: SyncDataKeys.evtError,
+  //       SyncDataKeys.result: e.toString(),
+  //     });
+  //   } finally {
+  //     _isCycleRunning = false;
+  //   }
+  // }
+
   Future<void> _runSyncCycle() async {
     _isCycleRunning = true;
-
+    await LogService.writeLog(message: '$_tag _runSyncCycle.');
     try {
-      // await GetStorage.init();
-
-      // 1. Internet check
       if (!await _checkInternet()) {
-        LogService.writeLog(message: '$_tag No internet — skipping cycle.');
+        await LogService.writeLog(
+          message: '$_tag No internet — skipping cycle.',
+        );
         _updateNotification(
           title: '📡 Sync Waiting',
           text: 'No connection — will retry in ${_intervalMinutes}min',
@@ -156,10 +262,15 @@ class OfflineSyncTaskHandler extends TaskHandler {
         });
         return;
       }
+
       final int pending = await OfflineDbModule.getPendingCount();
-      if (pending == 0) {
-        LogService.writeLog(
-          message: '$_tag Queue empty — nothing to push this cycle.',
+      final List<Map<String, dynamic>> leftoverQueues =
+          await OfflineDbModule.getPendigQueuesToRefresh();
+
+      if (pending == 0 && leftoverQueues.isEmpty) {
+        await LogService.writeLog(
+          message:
+              '$_tag Nothing pending and no leftover queues — skipping cycle.',
         );
         _updateNotification(
           title: '🔵 Sync Service Active',
@@ -168,44 +279,142 @@ class OfflineSyncTaskHandler extends TaskHandler {
         return;
       }
 
-      _updateNotification(
-        title: '🔄 Syncing',
-        text: 'Found $pending records — starting upload...',
+      final acquired = await OfflineDbModule.tryAcquireCachedSaveLock(
+        owner: 'background',
       );
-      LogService.writeLog(
-        message: '$_tag Starting push cycle. Pending: $pending',
-      );
+      if (!acquired) {
+        await LogService.writeLog(
+          message:
+              '$_tag Cached save is already running elsewhere. Skipping this cycle.',
+        );
+        _updateNotification(
+          title: '🔵 Sync Service Active',
+          text: 'Another sync is currently in progress.',
+        );
+        return;
+      }
 
-      final String result = await OfflineDbModule.backgroundPushPendingQueue(
-        armUrl: _armUrl,
-        onProgress: (current, total) {
-          _updateNotification(
-            title: '🔄 Syncing',
-            text: 'Uploading $current / $total records...',
-          );
-          FlutterForegroundTask.sendDataToMain({
-            SyncDataKeys.event: SyncDataKeys.evtProgress,
-            SyncDataKeys.current: current,
-            SyncDataKeys.total: total,
-          });
-        },
-      );
-
-      LogService.writeLog(message: '$_tag Push done. Result: $result');
-      if (result == '__AUTH_FAILED__') {
+      final bool sessionOk = await OfflineDbModule.ensureValidSession();
+      if (!sessionOk) {
+        await LogService.writeLog(
+          message:
+              '$_tag Session invalid and silent relogin failed — skipping cycle.',
+        );
         _updateNotification(
           title: '🔴 Session Expired',
           text: 'Please log in again to continue syncing.',
         );
+        await SyncAlertNotifier.show(
+          id: 2,
+          title: '🔴 Session Expired',
+          body: 'Please log in again to continue syncing your offline data.',
+        );
         FlutterForegroundTask.sendDataToMain({
           SyncDataKeys.event: SyncDataKeys.evtAuthFailed,
         });
-        return; // ← skip the evtDone block entirely
+        return;
       }
-      // 5. Post-push — NEVER stop service here.
-      //    User may save new offline records before the next cycle.
-      //    Just update notification + report to main isolate.
-      //    Next timer cycle will re-check the queue.
+
+      _updateNotification(
+        title: '🔄 Syncing',
+        text: 'Checking previous sync queues...',
+      );
+
+      final leftoverResults =
+          await OfflineDbModule.resolvePendingCachedSaveQueueBatchesBackgroundSafe(
+            onProgress: (msg) {
+              log('$_tag [RESOLVE] $msg');
+              FlutterForegroundTask.updateService(notificationText: msg);
+            },
+          );
+
+      await LogService.writeLog(
+        message:
+            '$_tag Resolved ${leftoverResults.length} leftover queue(s). '
+            'results=${leftoverResults.map((r) => '${r.queueId}:${r.statusLabel}').toList()}',
+      );
+
+      // Re-check AFTER resolving — this is the real number that matters now.
+      final int pendingAfterResolve = await OfflineDbModule.getPendingCount();
+      if (pendingAfterResolve == 0) {
+        await LogService.writeLog(
+          message: '$_tag Nothing left to push after resolving.',
+        );
+        _updateNotification(
+          title: '✅ Sync Complete',
+          text: 'All records synced — next check in ${_intervalMinutes}min',
+        );
+        return;
+      }
+
+      _updateNotification(
+        title: '🔄 Syncing',
+        text: 'Found $pendingAfterResolve records — starting upload...',
+      );
+      await SyncAlertNotifier.show(
+        id: 1,
+        title: '🔄 Sync Started',
+        body: 'Uploading $pendingAfterResolve pending record(s)...',
+      );
+
+      final result = await OfflineDbModule.runCachedSave(
+        onProgress: (message) {
+          log('$_tag $message');
+          FlutterForegroundTask.updateService(notificationText: message);
+        },
+      );
+
+      await LogService.writeLog(message: '$_tag Push done. Result: $result');
+
+      switch (result.status) {
+        case CachedSaveStatus.success:
+          _sendData({
+            SyncDataKeys.event: SyncDataKeys.evtDone,
+            SyncDataKeys.result: result.message,
+            SyncDataKeys.lastSyncedAt:
+                await OfflineDbModule.getLastSyncedTimestamp(),
+            SyncDataKeys.pendingCount: await OfflineDbModule.getPendingCount(),
+          });
+          await SyncAlertNotifier.show(
+            id: 3,
+            title: '✅ Sync Complete',
+            body: result.message,
+          );
+          break;
+
+        case CachedSaveStatus.queueEmpty:
+          _sendData({
+            SyncDataKeys.event: SyncDataKeys.evtDone,
+            SyncDataKeys.result: "Queue is empty",
+            SyncDataKeys.pendingCount: 0,
+          });
+          break;
+
+        case CachedSaveStatus.noSession:
+        case CachedSaveStatus.authFailed:
+          _sendData({
+            SyncDataKeys.event: SyncDataKeys.evtAuthFailed,
+            SyncDataKeys.result: result.message,
+          });
+          await SyncAlertNotifier.show(
+            id: 2,
+            title: '🔴 Session Expired',
+            body: 'Please log in again to continue syncing your offline data.',
+          );
+          break;
+
+        case CachedSaveStatus.failed:
+          _sendData({
+            SyncDataKeys.event: SyncDataKeys.evtError,
+            SyncDataKeys.result: result.message,
+          });
+          await SyncAlertNotifier.show(
+            id: 4,
+            title: '⚠️ Sync Failed',
+            body: result.message,
+          );
+          break;
+      }
       final int remaining = await OfflineDbModule.getPendingCount();
       final String? lastTs = await OfflineDbModule.getLastSyncedTimestamp();
 
@@ -218,12 +427,12 @@ class OfflineSyncTaskHandler extends TaskHandler {
 
       FlutterForegroundTask.sendDataToMain({
         SyncDataKeys.event: SyncDataKeys.evtDone,
-        SyncDataKeys.result: result,
+        SyncDataKeys.result: result.message,
         SyncDataKeys.pendingCount: remaining,
         SyncDataKeys.lastSyncedAt: lastTs ?? '',
       });
     } catch (e) {
-      LogService.writeLog(message: '$_tag Cycle FAILED: $e');
+      await LogService.writeLog(message: '$_tag Cycle FAILED: $e');
       _updateNotification(
         title: '🔴 Sync Error',
         text: 'Sync failed — retrying in ${_intervalMinutes}min',
@@ -234,9 +443,9 @@ class OfflineSyncTaskHandler extends TaskHandler {
       });
     } finally {
       _isCycleRunning = false;
+      await OfflineDbModule.releaseCachedSaveLock(owner: 'background');
     }
   }
-
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   Future<void> _ensureDbInitialized() async {
@@ -271,5 +480,9 @@ class OfflineSyncTaskHandler extends TaskHandler {
       return 'Today $time';
     }
     return '${dt.day}/${dt.month} $time';
+  }
+
+  void _sendData(Map<String, dynamic> data) {
+    FlutterForegroundTask.sendDataToMain(data);
   }
 }

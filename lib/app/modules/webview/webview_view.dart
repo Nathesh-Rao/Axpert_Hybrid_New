@@ -12,6 +12,8 @@ import 'package:axpert/app/modules/webview/widgets/session_expired_widget.dart';
 import 'package:axpert/app/widgets/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../offline_form_pages/auto_sync/sync.dart';
+
 const double _kTopBarHeight = 64.0;
 const double _kBottomBarHeight = 64.0;
 
@@ -21,9 +23,11 @@ class WebviewView extends GetView<WebViewController> {
   @override
   Widget build(BuildContext context) {
     print("CurrentURL => ${controller.currentUrl.value}");
-
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      OfflineBackgroundSyncService.instance.start();
+    });
     return PopScope(
-      canPop: false, // always intercept back
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
 
@@ -369,25 +373,86 @@ class WebviewView extends GetView<WebViewController> {
                             )
                           : SizedBox.shrink(),
                     ),
+
+                    Obx(
+                      () => AnimatedPositioned(
+                        bottom: 70,
+                        right:
+                            (controller.isChromeVisible.value &&
+                                !controller.isSessionExpired.value)
+                            ? 20
+                            : -100,
+                        duration: Duration(milliseconds: 500),
+                        curve: Curves.decelerate,
+                        child:
+                            GlobalVariableController
+                                    .to
+                                    .OFFLINE_FORMS_COUNT
+                                    .value >
+                                0
+                            ? FloatingActionButton(
+                                child: Icon(Icons.description_outlined),
+                                onPressed: () {
+                                  Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                                },
+                              )
+                            // _NavButton(
+                            //     icon: Icons.description_outlined,
+                            //     enabled: true,
+                            //     onTap: () {
+                            //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                            //     },
+                            //     activeColor: AppColors.green,
+                            //   )
+                            : SizedBox.shrink(),
+                      ),
+                    ),
                   ],
                 ),
               ),
 
               // ── BOTTOM BAR ───────────────────────────────────────────
-              Obx(
-                () => AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  height: controller.isChromeVisible.value
-                      ? _kBottomBarHeight
-                      : 0.0,
-                  child: ClipRect(child: _BottomNavBar(controller: controller)),
-                ),
-              ),
+              // Obx(
+              //   () => AnimatedContainer(
+              //     duration: const Duration(milliseconds: 300),
+              //     curve: Curves.easeInOut,
+              //     height: controller.isChromeVisible.value
+              //         ? _kBottomBarHeight
+              //         : 0.0,
+              //     child: ClipRect(child: _BottomNavBar(controller: controller)),
+              //   ),
+              // ),
+              // 10.verticalSpace,
             ],
           ),
         ),
         // floatingActionButton:
+        //     GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
+        //     ? AnimatedContainer(
+        //         duration: Duration(milliseconds: 600),
+        //         margin: EdgeInsetsGeometry.only(
+        //           right: controller.isChromeVisible.value ? 20 : -20,
+        //           bottom: 50,
+        //         ),
+        //         child: _NavButton(
+        //           icon: Icons.description_outlined,
+        //           enabled: true,
+        //           onTap: () {
+        //             Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+        //           },
+        //           activeColor: AppColors.green,
+        //         ),
+        //       )
+        //     // FloatingActionButton(
+        //     //     backgroundColor: AppColors.darkBlue,
+        //     //     foregroundColor: Colors.white,
+        //     //     child: Icon(Icons.insert_page_break_sharp),
+        //     //     onPressed: () {
+        //     //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+        //     //     },
+        //     //   )
+        //     : SizedBox.shrink(),
+        // floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       ),
     );
   }
@@ -739,26 +804,26 @@ class _BottomNavBar extends StatelessWidget {
           //   onTap: controller.closeScreen,
           //   activeColor: AppColors.darkBlue,
           // ),
-          // Obx(
-          //   () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
-          //       ? _NavButton(
-          //           icon: Icons.description_outlined,
-          //           enabled: true,
-          //           onTap: () {
-          //             Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
-          //           },
-          //           activeColor: AppColors.green,
-          //         )
-          //       // FloatingActionButton(
-          //       //     backgroundColor: AppColors.darkBlue,
-          //       //     foregroundColor: Colors.white,
-          //       //     child: Icon(Icons.insert_page_break_sharp),
-          //       //     onPressed: () {
-          //       //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
-          //       //     },
-          //       //   )
-          //       : SizedBox.shrink(),
-          // ),
+          Obx(
+            () => GlobalVariableController.to.OFFLINE_FORMS_COUNT.value > 0
+                ? _NavButton(
+                    icon: Icons.description_outlined,
+                    enabled: true,
+                    onTap: () {
+                      Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                    },
+                    activeColor: AppColors.green,
+                  )
+                // FloatingActionButton(
+                //     backgroundColor: AppColors.darkBlue,
+                //     foregroundColor: Colors.white,
+                //     child: Icon(Icons.insert_page_break_sharp),
+                //     onPressed: () {
+                //       Get.toNamed(Routes.OFFLINE_LISTING_PAGE);
+                //     },
+                //   )
+                : SizedBox.shrink(),
+          ),
         ],
       ),
     );

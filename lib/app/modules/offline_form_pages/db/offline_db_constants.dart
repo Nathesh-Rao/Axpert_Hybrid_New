@@ -6,7 +6,7 @@ class OfflineDBConstants {
   OfflineDBConstants._();
 
   static String OFFLINE_PAGES_URL() {
-    return "https://raw.githubusercontent.com/amrith4agile/offline_sample_pages/refs/heads/main/offline_pages.json";
+    // return "https://raw.githubusercontent.com/amrith4agile/offline_sample_pages/refs/heads/main/offline_pages.json";
 
     String userEnteredUrl = StorageService.webUrl ?? '';
     if (!userEnteredUrl.startsWith('http')) {
@@ -65,7 +65,7 @@ class OfflineDBConstants {
   static const String TABLE_OFFLINE_USER = 'offline_user';
   static const String TABLE_AUDIT_LOGS = 'ax_audit_logs';
   static const String TABLE_CACHED_SAVE_QUEUE = 'cached_save_queue';
-
+  static const String TABLE_SYNC_LOCK = 'offline_sync_lock';
   // ================= COMMON COLUMNS =================
 
   static const String COL_ID = 'id';
@@ -79,6 +79,13 @@ class OfflineDBConstants {
 
   static const String COL_PAGE_JSON = 'page_json';
   static const String COL_FETCHED_AT = 'fetched_at';
+
+  // ================= LOCK TABLE =================
+
+  static const String COL_LOCK_NAME = 'lock_name';
+  static const String COL_LOCK_OWNER = 'lock_owner';
+  static const String COL_LOCK_ACQUIRED_AT = 'acquired_at';
+  static const String COL_LOCK_EXPIRES_AT = 'expires_at';
 
   // ================= DATASOURCES =================
 
@@ -277,5 +284,15 @@ class OfflineDBConstants {
     $COL_CREATED_AT      TEXT    NOT NULL,
     $COL_UPDATED_AT      TEXT    NOT NULL
   )
+''';
+
+  static const String CREATE_SYNC_LOCK_TABLE =
+      '''
+CREATE TABLE IF NOT EXISTS $TABLE_SYNC_LOCK (
+  $COL_LOCK_NAME TEXT PRIMARY KEY,
+  $COL_LOCK_OWNER TEXT NOT NULL,
+  $COL_LOCK_ACQUIRED_AT TEXT NOT NULL,
+  $COL_LOCK_EXPIRES_AT TEXT NOT NULL
+)
 ''';
 }
