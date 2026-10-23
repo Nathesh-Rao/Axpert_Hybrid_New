@@ -85,6 +85,7 @@ dependencies:
   connectivity_plus: ^7.3.1
   geocoding: ^4.0.0
 dev_dependencies:
+  path_provider_platform_interface: ^2.1.2
   flutter_test:
     sdk: flutter
 
@@ -95,6 +96,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.1
+  sqflite_common_ffi: ^2.4.0+3
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 flutter_launcher_icons:

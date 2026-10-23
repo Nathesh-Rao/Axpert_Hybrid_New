@@ -1,673 +1,318 @@
-// import 'dart:async';
-
-// import 'package:axpert/app/modules/auth/controller/auth_controller.dart';
-// import 'package:axpert/app/modules/auth/widget/login_button.dart';
-
-// import '../../../core/common.dart';
-
-// class OtpPage extends StatefulWidget {
-//   const OtpPage({super.key});
-
-//   @override
-//   State<OtpPage> createState() => _OtpPageState();
-// }
-
-// class _OtpPageState extends State<OtpPage> {
-//   AuthController authController = Get.find();
-
-//   //Duration _remaining = const Duration(minutes: 2, seconds: 00);
-//   late Duration _remaining;
-//   Timer? _timer;
-//   bool _isTimerActive = true;
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _startCountdown();
-//   }
-
-//   @override
-//   void dispose() {
-//     _timer?.cancel();
-//     super.dispose();
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return PopScope(
-//       canPop: false,
-//       onPopInvokedWithResult: (didPop, result) {
-//         if (!didPop) {
-//           Get.offAllNamed(Routes.LOGIN);
-//         }
-//       },
-//       child: Scaffold(
-//         appBar: AppBar(
-//           elevation: 0,
-//           toolbarHeight: 100,
-//           backgroundColor: Colors.white,
-//           centerTitle: true,
-//           title: Hero(
-//             tag: 'axpertImage',
-//             child: Image.network(
-//               'assets/images/axpert_04.png',
-//               // 'assets/images/buzzily-logo.png',
-//               // height: MediaQuery.of(context).size.height * 0.048,
-//               width: MediaQuery.of(context).size.width * 0.24,
-//               fit: BoxFit.fill,
-//             ),
-//           ),
-//           /*actions: [
-//             IconButton(
-//                 onPressed: () {
-//                   Get.toNamed(Routes.ProjectListingPage);
-//                 },
-//                 icon: Icon(
-//                   CupertinoIcons.plus_rectangle_fill_on_rectangle_fill,
-//                   color: AppColors.AXMDark,
-//                 ))
-//           ],*/
-//         ),
-//         resizeToAvoidBottomInset: false,
-//         body: SafeArea(
-//           child: Stack(
-//             children: [
-//               SingleChildScrollView(
-//                 physics: BouncingScrollPhysics(),
-//                 child: Column(
-//                   children: [
-//                     SizedBox(height: MediaQuery.of(context).size.height * 0.03),
-//                     Text(
-//                       "OTP",
-//                       style: GoogleFonts.poppins(
-//                         fontSize: 34,
-//                         fontWeight: FontWeight.w600,
-//                         color: AppColors.AXMDark,
-//                       ),
-//                     ),
-//                     SizedBox(height: 5),
-//                     Padding(
-//                       padding: const EdgeInsets.only(left: 10, right: 10),
-//                       child: Text(
-//                         loginController.otpMsg.value,
-//                         //"Sign in to enjoy the best managing experience\nEnter Your Credentials",
-//                         textAlign: TextAlign.center,
-//                         style: GoogleFonts.poppins(
-//                           fontSize: 14,
-//                           fontWeight: FontWeight.w500,
-//                           color: AppColors.AXMGray,
-//                         ),
-//                       ),
-//                     ),
-//                     SizedBox(
-//                       height: MediaQuery.of(context).size.height * 0.025,
-//                     ),
-//                     Obx(
-//                       () => _projectNameWidget(
-//                         projectName: authController.currentProjectName.value,
-//                       ),
-//                     ),
-//                     Obx(
-//                       () => WidgetOtpTextField(
-//                         label: "OTP",
-//                         controller: loginController.otpFieldController,
-//                         isLoading: loginController.isOtpLoading.value,
-//                         otpLength: int.parse(loginController.otpChars.value),
-//                         errorText: loginController.otpErrorText.value,
-//                         onCompleted: loginController.callVerifyOTP,
-//                       ),
-//                     ),
-//                     SizedBox(height: 20),
-//                     Padding(
-//                       padding: const EdgeInsets.symmetric(horizontal: 25),
-//                       child: Row(
-//                         // mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                         children: [
-//                           Row(
-//                             children: [
-//                               Text(
-//                                 _formattedTime,
-//                                 style: GoogleFonts.manrope(
-//                                   fontWeight: FontWeight.w700,
-//                                   fontSize: 13,
-//                                   color: AppColors.darkBlue,
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                           Spacer(),
-//                           Text(
-//                             "Didn't receive any code? ",
-//                             style: GoogleFonts.manrope(
-//                               // decoration: TextDecoration.underline,
-//                               fontWeight: FontWeight.w600,
-//                               fontSize: 13,
-//                               color: AppColors.AXMGray,
-//                             ),
-//                           ),
-//                           InkWell(
-//                             onTap: _isTimerActive
-//                                 ? null // Disable tap
-//                                 : () {
-//                                     // Handle resend OTP logic
-//                                     _startCountdown();
-//                                     authController.callResendOTP();
-//                                   },
-//                             child: Text(
-//                               "RESEND",
-//                               style: GoogleFonts.manrope(
-//                                 // decoration: TextDecoration.underline,
-//                                 fontWeight: FontWeight.w700,
-//                                 fontSize: 13,
-//                                 color: _isTimerActive
-//                                     ? Colors.grey
-//                                     : AppColors.AXMDark,
-//                               ),
-//                             ),
-//                           ),
-//                         ],
-//                       ),
-//                     ),
-//                     SizedBox(height: 40),
-
-//                     WidgetLoginButton(
-//                       label: "Login",
-//                       onPressed: () {
-//                         authController.callVerifyOTP();
-//                       },
-//                     ),
-
-//                     // Center(
-//                     //   child: Text("${MediaQuery.of(context).size.height * 0.065}"),
-//                     // ),
-//                     // SizedBox(height: 20),
-//                     SizedBox(height: 30),
-//                     FittedBox(
-//                       child: Text(
-//                         "By using the software, you agree to the",
-//                         style: GoogleFonts.poppins(
-//                           textStyle: TextStyle(
-//                             fontWeight: FontWeight.w400,
-//                             fontSize: 12,
-//                             letterSpacing: 1,
-//                             color: Colors.black,
-//                           ),
-//                         ),
-//                       ),
-//                     ),
-//                     Row(
-//                       mainAxisAlignment: MainAxisAlignment.center,
-//                       children: [
-//                         FittedBox(
-//                           child: Text(
-//                             "Privacy Policy",
-//                             style: GoogleFonts.poppins(
-//                               textStyle: TextStyle(
-//                                 decoration: TextDecoration.underline,
-//                                 fontWeight: FontWeight.w400,
-//                                 fontSize: 12,
-//                                 color: Colors.blue,
-//                                 letterSpacing: 1,
-//                               ),
-//                             ),
-//                           ),
-//                         ),
-//                         FittedBox(
-//                           child: Text(
-//                             " and the",
-//                             style: GoogleFonts.poppins(
-//                               textStyle: TextStyle(
-//                                 fontWeight: FontWeight.w400,
-//                                 fontSize: 12,
-//                                 color: Colors.black,
-//                                 letterSpacing: 1,
-//                               ),
-//                             ),
-//                           ),
-//                         ),
-//                         FittedBox(
-//                           child: Text(
-//                             " Terms of Use",
-//                             style: GoogleFonts.poppins(
-//                               textStyle: TextStyle(
-//                                 decoration: TextDecoration.underline,
-//                                 fontWeight: FontWeight.w400,
-//                                 fontSize: 12,
-//                                 color: Colors.blue,
-//                                 letterSpacing: 1,
-//                               ),
-//                             ),
-//                           ),
-//                         ),
-//                       ],
-//                     ),
-//                     SizedBox(height: 10),
-//                     Text(
-//                       "Powered By",
-//                       textAlign: TextAlign.center,
-//                       style: GoogleFonts.poppins(
-//                         textStyle: TextStyle(
-//                           fontWeight: FontWeight.w500,
-//                           fontSize: 12,
-//                           color: Colors.black,
-//                           letterSpacing: 1,
-//                         ),
-//                       ),
-//                     ),
-//                     Image.asset(
-//                       'assets/images/agilelabslogo.png',
-//                       height: MediaQuery.of(context).size.height * 0.04,
-//                       // width: MediaQuery.of(context).size.width * 0.075,
-//                       fit: BoxFit.fill,
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//               Align(
-//                 alignment: Alignment.bottomRight,
-//                 child: Padding(
-//                   padding: const EdgeInsets.fromLTRB(0, 0, 25, 10),
-//                   child: FutureBuilder(
-//                     future: loginController.getVersionName(),
-//                     builder: (context, snapshot) {
-//                       if (snapshot.hasData) {
-//                         return Text(
-//                           "Version:${snapshot.data}${AppConst.APP_RELEASE_DATE}",
-//                           style: GoogleFonts.poppins(
-//                             textStyle: TextStyle(
-//                               color: AppColors.buzzilyblack,
-//                               fontWeight: FontWeight.w700,
-//                               fontSize:
-//                                   MediaQuery.of(context).size.height * 0.012,
-//                             ),
-//                           ),
-//                         );
-//                       } else {
-//                         return Text("");
-//                       }
-//                     },
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-
-//   Widget _projectNameWidget({required String projectName}) {
-//     return Row(
-//       mainAxisSize: MainAxisSize.min,
-//       children: [
-//         Container(
-//           padding: EdgeInsets.symmetric(vertical: 7, horizontal: 20),
-//           decoration: BoxDecoration(
-//             color: Color(0xffD9D9D9).withAlpha(125),
-//             borderRadius: BorderRadius.circular(50),
-//           ),
-//           child: Center(
-//             child: Text(
-//               projectName,
-//               textAlign: TextAlign.center,
-//               style: GoogleFonts.poppins(
-//                 fontSize: 11,
-//                 fontWeight: FontWeight.w500,
-//                 color: AppColors.AXMDark,
-//               ),
-//             ),
-//           ),
-//         ),
-//       ],
-//     );
-//   }
-
-//   void _startCountdown() {
-//     _isTimerActive = true;
-//     _remaining = Duration(
-//       minutes: int.parse(authController.otpExpiryTime.value),
-//     );
-//     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-//       if (_remaining.inSeconds > 0) {
-//         setState(() {
-//           _remaining -= const Duration(seconds: 1);
-//         });
-//       } else {
-//         timer.cancel();
-//         setState(() {
-//           _isTimerActive = false; // Enable RESEND
-//         });
-//       }
-//     });
-//   }
-
-//   String get _formattedTime {
-//     final minutes = _remaining.inMinutes
-//         .remainder(60)
-//         .toString()
-//         .padLeft(1, '0');
-//     final seconds = _remaining.inSeconds
-//         .remainder(60)
-//         .toString()
-//         .padLeft(2, '0');
-//     return '$minutes:$seconds min';
-//   }
-// }
-
 import 'package:axpert/app/data/const/app_const.dart';
-import 'package:axpert/app/widgets/axpert_info_widget.dart';
+import 'package:axpert/app/widgets/connection_style.dart';
 import '../../../core/common.dart';
-import '../../auth/controller/auth_controller.dart';
-import '../widget/login_button.dart';
+import '../controller/auth_controller.dart';
 import '../widget/otp_field.dart';
+import '../../../widgets/project_logo.dart';
 
 class OTPView extends GetView<AuthController> {
   const OTPView({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          Get.offAllNamed(Routes.LOGIN);
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          elevation: 0,
-          toolbarHeight: 100,
-          backgroundColor: Colors.white,
-          centerTitle: true,
-          title: Hero(
-            tag: 'axpertImage',
-            child: Image.network(
-              controller.selectedProject.value?.logourl ?? '',
-              width: MediaQuery.of(context).size.width * 0.24,
-              fit: BoxFit.contain,
-              // frameBuilder:
-              //     (context, child, frame, wasSynchronouslyLoaded) {
-              //       if (wasSynchronouslyLoaded || frame != null) {
-              //         return child;
-              //       }
-              //       return SizedBox(
-              //         width: MediaQuery.of(context).size.width * 0.24,
-              //         child: const Center(child: LoadingLottieWidget()),
-              //       );
-              //     },
-              errorBuilder: (context, error, stackTrace) {
-                return Image.asset(
-                  'assets/images/axpert_logo_new.png',
-                  width: MediaQuery.of(context).size.width * 0.24,
-                  fit: BoxFit.fill,
-                );
-              },
-            ),
-          ),
-        ),
-        backgroundColor: Colors.white,
-        resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    SizedBox(height: MediaQuery.of(context).size.height * 0.03),
-                    Text(
-                      "OTP",
-                      style: GoogleFonts.poppins(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.darkBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Obx(
-                        () => Text(
-                          controller.otpMsg.value,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.025,
-                    ),
-
-                    Obx(
-                      () => _projectNameWidget(
-                        projectName: controller.currentProjectName.value,
-                        baseColor:
-                            controller.selectedColor.value ??
-                            AppColors.darkBlue,
-                      ),
-                    ),
-
-                    Obx(
-                      () => WidgetOtpTextField(
-                        label: "OTP",
-                        controller: controller.otpFieldController,
-                        isLoading: controller.isOtpLoading.value,
-                        otpLength: int.parse(controller.otpChars.value),
-                        errorText: controller.otpErrorText.value,
-                        onCompleted: () => controller.callVerifyOTP(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 25),
-                      child: Row(
-                        children: [
-                          Obx(
-                            () => Text(
-                              controller.otpFormattedTime,
-                              style: GoogleFonts.manrope(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                color:
-                                    controller.selectedColor.value ??
-                                    AppColors.darkBlue,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            "Didn't receive any code? ",
-                            style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          Obx(
-                            () => InkWell(
-                              onTap: controller.isOtpTimerActive
-                                  ? null
-                                  : () => controller.callResendOTP(),
-                              child: Text(
-                                "RESEND",
-                                style: GoogleFonts.manrope(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: controller.isOtpTimerActive
-                                      ? Colors.grey
-                                      : (controller.selectedColor.value ??
-                                            AppColors.darkBlue),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 40),
-
-                    Obx(
-                      () => WidgetLoginButton(
-                        label: "Login",
-                        color: controller.selectedColor.value,
-                        onPressed: () => controller.callVerifyOTP(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
-                    FittedBox(
-                      child: Text(
-                        "By using the software, you agree to the",
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w400,
-                          fontSize: 12,
-                          letterSpacing: 1,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, result) {
+      if (!didPop) Get.offAllNamed(Routes.LOGIN);
+    },
+    child: Scaffold(
+      backgroundColor: ConnectionStyle.card(context),
+      body: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              children: [
+                ConnectionHero(
+                  child: SafeArea(
+                    bottom: false,
+                    child: Stack(
                       children: [
-                        FittedBox(
-                          child: Text(
-                            "Privacy Policy",
-                            style: GoogleFonts.poppins(
-                              decoration: TextDecoration.underline,
-                              fontWeight: FontWeight.w400,
-                              fontSize: 12,
-                              color: Colors.blue,
-                              letterSpacing: 1,
+                        Positioned(
+                          top: 8,
+                          left: 18,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withValues(alpha: .14),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: IconButton(
+                              tooltip: 'Back to sign in',
+                              onPressed: () => Get.offAllNamed(Routes.LOGIN),
+                              icon: const Icon(
+                                Icons.arrow_back,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
-                        FittedBox(
-                          child: Text(
-                            " and the",
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w400,
-                              fontSize: 12,
-                              color: Colors.black,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ),
-                        FittedBox(
-                          child: Text(
-                            " Terms of Use",
-                            style: GoogleFonts.poppins(
-                              decoration: TextDecoration.underline,
-                              fontWeight: FontWeight.w400,
-                              fontSize: 12,
-                              color: Colors.blue,
-                              letterSpacing: 1,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 58),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Column(
+                              children: [
+                                Obx(
+                                  () => ProjectLogo(
+                                    url:
+                                        controller
+                                            .selectedProject
+                                            .value
+                                            ?.logourl ??
+                                        '',
+                                    projectName:
+                                        controller.currentProjectName.value,
+                                    size: 72,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Enter OTP',
+                                  style: ConnectionStyle.text(
+                                    context,
+                                    26,
+                                    weight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Obx(
+                                  () => Text(
+                                    controller.otpMsg.value,
+                                    textAlign: TextAlign.center,
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      12.5,
+                                      color: Colors.white.withValues(
+                                        alpha: .82,
+                                      ),
+                                    ).copyWith(height: 1.55),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .14),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.storage_outlined,
+                                        size: 15,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Obx(
+                                          () => Text(
+                                            controller.currentProjectName.value,
+                                            textAlign: TextAlign.center,
+                                            style: ConnectionStyle.text(
+                                              context,
+                                              12.5,
+                                              weight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                    // const SizedBox(height: 10),
-                    // AxpertInfoWidget(),
-                  ],
+                  ),
                 ),
-              ),
+                Transform.translate(
+                  offset: const Offset(0, -34),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 22, 18, 0),
+                    decoration: BoxDecoration(
+                      color: ConnectionStyle.card(context),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(32),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Obx(
+                          () => WidgetOtpTextField(
+                            label: 'One-time password',
+                            controller: controller.otpFieldController,
+                            isLoading: controller.isOtpLoading.value,
+                            otpLength: int.parse(controller.otpChars.value),
+                            errorText: controller.otpErrorText.value,
+                            onCompleted: () => controller.callVerifyOTP(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 12,
+                          runSpacing: 4,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 11,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ConnectionStyle.tint(context),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.schedule_outlined,
+                                    size: 14,
+                                    color: ConnectionStyle.ink(context),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Obx(
+                                    () => Text(
+                                      controller.otpFormattedTime,
+                                      style: ConnectionStyle.text(
+                                        context,
+                                        12.5,
+                                        weight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
 
-              // Align(
-              //   alignment: Alignment.bottomRight,
-              //   child: Padding(
-              //     padding: const EdgeInsets.fromLTRB(0, 0, 25, 10),
-              //     child: FutureBuilder(
-              //       future: controller.getVersionName(),
-              //       builder: (context, snapshot) {
-              //         if (snapshot.hasData) {
-              //           return Text(
-              //             "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
-              //             style: GoogleFonts.poppins(
-              //               color: Colors.black87,
-              //               fontWeight: FontWeight.w700,
-              //               fontSize:
-              //                   MediaQuery.of(context).size.height * 0.012,
-              //             ),
-              //           );
-              //         }
-              //         return const SizedBox.shrink();
-              //       },
-              //     ),
-              //   ),
-              // ),
-              Align(
-                alignment: AlignmentGeometry.bottomCenter,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AxpertInfoWidget(),
-                    15.verticalSpace,
-                    _testBuildVersion(),
-                    5.verticalSpace,
-                  ],
+                            Obx(
+                              () => TextButton(
+                                onPressed: controller.isOtpTimerActive
+                                    ? null
+                                    : () => controller.callResendOTP(),
+                                child: Text(
+                                  controller.isOtpTimerActive
+                                      ? 'Resend in ${controller.otpRemainingSeconds.value}s'
+                                      : 'Resend code',
+                                  style:
+                                      ConnectionStyle.text(
+                                        context,
+                                        12.5,
+                                        weight: FontWeight.w700,
+                                        color: controller.isOtpTimerActive
+                                            ? ConnectionStyle.muted(context)
+                                            : ConnectionStyle.ink(context),
+                                      ).copyWith(
+                                        decoration: controller.isOtpTimerActive
+                                            ? TextDecoration.none
+                                            : TextDecoration.underline,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 22),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ConnectionButton(
+                            label: 'Login',
+                            onPressed: () => controller.callVerifyOTP(),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Center(
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                const TextSpan(
+                                  text:
+                                      'By using the software, you agree to the\n',
+                                ),
+                                TextSpan(
+                                  text: 'Privacy Policy',
+                                  style: TextStyle(
+                                    color: ConnectionStyle.dark(context)
+                                        ? const Color(0xff9DB6FF)
+                                        : ConnectionStyle.navy,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                                const TextSpan(text: ' and the '),
+                                TextSpan(
+                                  text: 'Terms of Use',
+                                  style: TextStyle(
+                                    color: ConnectionStyle.dark(context)
+                                        ? const Color(0xff9DB6FF)
+                                        : ConnectionStyle.navy,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                                const TextSpan(text: '.'),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
+                            style: ConnectionStyle.text(
+                              context,
+                              11.5,
+                              color: ConnectionStyle.muted(context),
+                            ).copyWith(height: 1.6),
+                          ),
+                        ),
+                        const SizedBox(height: 36),
+                        Center(
+                          child: Text(
+                            'Powered by Axpert',
+                            style: ConnectionStyle.text(
+                              context,
+                              11,
+                              color: ConnectionStyle.muted(context),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Center(
+                          child: FutureBuilder<String>(
+                            future: controller.getVersionName(),
+                            builder: (context, snapshot) => snapshot.hasData
+                                ? Text(
+                                    'v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}',
+                                    textAlign: TextAlign.center,
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      10,
+                                      color: ConnectionStyle.muted(context),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ),
+                        SizedBox(
+                          height: MediaQuery.paddingOf(context).bottom + 16,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _testBuildVersion() {
-    return Align(
-      alignment: Alignment.bottomRight,
-      child: Padding(
-        padding: EdgeInsets.only(right: 20.w),
-        child: FutureBuilder(
-          future: controller.getVersionName(),
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              return Text(
-                "v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}",
-                // "v${snapshot.data}",
-                style: GoogleFonts.poppins(
-                  textStyle: TextStyle(
-                    color: AppColors.moreDark,
-                    fontWeight: FontWeight.w700,
-                    fontSize: MediaQuery.of(context).size.height * 0.010.sp,
-                  ),
-                ),
-              );
-            } else {
-              return Text("");
-            }
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _projectNameWidget({
-    required String projectName,
-    required Color baseColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 20),
-      decoration: BoxDecoration(
-        color: baseColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(50),
-      ),
-      child: Text(
-        projectName,
-        textAlign: TextAlign.center,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: baseColor,
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }

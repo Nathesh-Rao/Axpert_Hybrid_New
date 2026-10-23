@@ -1,4 +1,4 @@
-import 'dart:developer';
+import '../../../widgets/project_logo.dart';
 
 import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/modules/project/controller/project_controller.dart';
@@ -164,33 +164,10 @@ class ProjectListTile extends GetView<ProjectController> {
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.zero,
               ),
-              leading: ClipOval(
-                child: SizedBox(
-                  width: 48.r,
-                  height: 48.r,
-                  child: Container(
-                    color: accentColor.withValues(alpha: 0.08),
-                    padding: EdgeInsets.all(5),
-                    child: Image.network(
-                      project.logourl,
-                      fit: BoxFit.contain,
-                      frameBuilder:
-                          (context, child, frame, wasSynchronouslyLoaded) {
-                            return child;
-                          },
-                      errorBuilder: (_, _, _) {
-                        log(project.logourl, name: "ProjectTile");
-                        return Center(
-                          child: Image.asset(
-                            'assets/icons/project_icon.png',
-                            width: 24.w,
-                            color: accentColor,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
+              leading: ProjectLogo(
+                url: project.logourl,
+                projectName: project.schemaName,
+                size: 48.r,
               ),
               title: Text(
                 project.caption.isNotEmpty

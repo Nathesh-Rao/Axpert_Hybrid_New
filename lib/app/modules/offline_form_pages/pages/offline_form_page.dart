@@ -19,6 +19,18 @@ class OfflineFormPage extends GetView<OfflineFormController> {
     final List<OfflineFormFieldModel> fields = List.from(
       controller.page.fields,
     );
+    final fieldKeys = {for (final field in fields) field.fldName: GlobalKey()};
+    if (controller.isCorrectingRecord && controller.correctionField != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final target = fieldKeys[controller.correctionField]?.currentContext;
+        if (target != null)
+          Scrollable.ensureVisible(
+            target,
+            alignment: .15,
+            duration: const Duration(milliseconds: 250),
+          );
+      });
+    }
     return PopScope(
       onPopInvokedWithResult: (bool dp, _) async {
         if (dp) return;
@@ -33,7 +45,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
           child: WidgetLoginButton(
             loading: false,
             icon: Icon(Icons.donut_small_outlined),
-            label: "Submit",
+            label: controller.isCorrectingRecord ? 'Save Changes' : "Submit",
             visible: true,
             onPressed: controller.onFormSubmit,
             color: AppColors.darkBlue,
@@ -81,12 +93,79 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         // ),
         body: GetBuilder(
           init: controller,
-          builder: (c) => ListView(
-            padding: EdgeInsets.only(left: 15.w, right: 15.w, bottom: 30.w),
-            children: fields
-                .map((field) => _buildFieldFromSchema(context, field))
-                .toList(),
-          ),
+          builder: (c) => controller.isCorrectingRecord
+              ? SingleChildScrollView(
+                  controller: controller.scrollCtrl,
+                  padding: EdgeInsets.only(
+                    left: 15.w,
+                    right: 15.w,
+                    bottom: 30.w,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF0F1),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Correct offline record #${controller.editingRecordId}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFB43B47),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              controller.correctionMessage.value,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                height: 1.5,
+                                color: const Color(0xFFB43B47),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (final field in fields)
+                        KeyedSubtree(
+                          key: fieldKeys[field.fldName],
+                          child: _buildFieldFromSchema(context, field),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          'Changes update this existing record and make it ready for sync.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppColors.AXMGray,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView(
+                  // The existing transaction reset scrolls this controller
+                  // back to the first field after a successful new-record save.
+                  controller: controller.scrollCtrl,
+                  padding: EdgeInsets.only(
+                    left: 15.w,
+                    right: 15.w,
+                    bottom: 30.w,
+                  ),
+                  children: fields
+                      .map((field) => _buildFieldFromSchema(context, field))
+                      .toList(),
+                ),
         ),
         // floatingActionButton: controller.page.attachments
         //     ? FloatingActionButton(
@@ -292,8 +371,15 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         });
 
         String currentRxValue = value.value;
+        // Keep the saved value visible when lookup data has changed. Normal
+        // new-form defaults continue to use the existing selection behavior.
+        if (controller.isCorrectingRecord &&
+            currentRxValue.isNotEmpty &&
+            !options.contains(currentRxValue)) {
+          options.add(currentRxValue);
+        }
         String? finalUiValue = currentRxValue;
-        if (options.length == 1) {
+        if (options.length == 1 && !controller.isCorrectingRecord) {
           finalUiValue = options.first;
         }
 

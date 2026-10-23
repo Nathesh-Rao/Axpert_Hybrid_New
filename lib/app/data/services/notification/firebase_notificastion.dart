@@ -110,6 +110,15 @@ void onMessageListener(RemoteMessage message) {
 @pragma('vm:entry-point')
 Future<void> onBackgroundMessageListner(RemoteMessage message) async {
   await GetStorage.init();
+  if (message.data.containsKey('axm_queueid')) {
+    await StorageService.init();
+    await OfflineDbModule.init();
+    await OfflineDbModule.processCachedSaveQueueFCM(
+      message.data,
+      isBackground: true,
+    );
+    return;
+  }
   print("Background message: ${message.data}");
   decodeFirebaseMessage(message, isBackground: true);
 }

@@ -9,6 +9,7 @@ import '../auto_sync/sync.dart';
 import '../controller/offline_form_controller.dart';
 import '../models/models.dart';
 import '../widgets/widgets.dart';
+import '../widgets/offline_send_status_banner.dart';
 
 class OfflineListingPage extends GetView<OfflineFormController> {
   const OfflineListingPage({super.key});
@@ -47,6 +48,25 @@ class OfflineListingPage extends GetView<OfflineFormController> {
         ),
 
         actions: [
+          Obx(
+            () => IconButton(
+              tooltip: 'Offline notifications',
+              onPressed: controller.openOfflineNotifications,
+              icon: Badge(
+                isLabelVisible: controller.unreadOfflineNotifications.value > 0,
+                label: Text(
+                  controller.unreadOfflineNotifications.value > 99
+                      ? '99+'
+                      : controller.unreadOfflineNotifications.value.toString(),
+                ),
+                child: Icon(
+                  Icons.notifications_none_rounded,
+                  color: AppColors.primaryPurple,
+                ),
+              ),
+              iconSize: 18.sp,
+            ),
+          ),
           IconButton(
             onPressed: controller.openOfflinesettings,
             icon: Icon(Icons.settings, color: AppColors.primaryPurple),
@@ -176,6 +196,17 @@ class OfflineListingPage extends GetView<OfflineFormController> {
       backgroundColor: Color(0xFFF8F7F4),
       body: Column(
         children: [
+          // Manual send progress stays on the listing page. Forms remain
+          // interactive; the banner is never a modal route or a sync worker.
+          Obx(() {
+            final state = controller.currentSendPendingBanner;
+            return state == null
+                ? const SizedBox.shrink()
+                : OfflineSendStatusBanner(
+                    state: state,
+                    onNotifications: controller.openOfflineNotifications,
+                  );
+          }),
           SizedBox(height: 20),
           Expanded(
             child: Obx(() {
@@ -433,36 +464,23 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                   _simpleRow(
                     icon: Icons.sync,
                     color: AppColors.darkBlue,
-                    title: "Sync All",
-                    subtitle: "Push pending & refetch everything",
-                    onTap: controller.actionSyncAll,
-                  ),
-                  _simpleRow(
-                    icon: Icons.description,
-                    color: Colors.indigo,
-                    title: "Refetch Forms",
-                    subtitle: "Reload offline forms",
-                    onTap: controller.actionRefetchForms,
-                  ),
-                  _simpleRow(
-                    icon: Icons.storage,
-                    color: Colors.teal,
-                    title: "Refetch Datasources",
-                    subtitle: "Reload lookup data",
-                    onTap: controller.actionRefetchDatasources,
+                    title: "Refresh",
+                    subtitle: "Refresh all offline forms or choose a form",
+                    onTap: controller.actionRefresh,
                   ),
                   _simpleRow(
                     icon: Icons.unarchive_rounded,
                     color: Colors.teal,
-                    title: "Export Database",
-                    subtitle: "Backup offline DB for debugging",
+                    title: "Export Offline Backup",
+                    subtitle: "Save a backup of your offline data",
                     onTap: controller.actionExportDatabase,
                   ),
                   _simpleRow(
                     icon: Icons.archive_rounded,
                     color: Colors.deepOrange,
-                    title: "Import Database",
-                    subtitle: "Restore or overwrite local DB file",
+                    title: "Restore Offline Backup",
+                    subtitle:
+                        "Restore a backup and replace current offline data",
                     onTap: controller.actionImportDatabase,
                   ),
                   // _simpleRow(
@@ -492,9 +510,19 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                     () => _simpleRow(
                       icon: Icons.upload,
                       color: Colors.green,
-                      title: "Push Pending records",
-                      subtitle: "Upload pending records to server",
-                      onTap: controller.actionPushPendingByCachedSave,
+                      title: controller.sendPendingRecordsDisabled
+                          ? 'Sending…'
+                          : 'Send Pending Records',
+                      subtitle: controller.sendPendingRecordsDisabled
+                          ? 'Please wait for the current sync to finish'
+                          : 'Send records saved offline to the server',
+                      isDisabled: controller.sendPendingRecordsDisabled,
+                      isBusy: controller.sendPendingRecordsDisabled,
+                      onTap: () {
+                        // Close only the drawer so the top banner is visible.
+                        Navigator.of(context).pop();
+                        controller.actionPushPendingByCachedSave();
+                      },
                       badge: controller.pendingCount.value != 0
                           ? controller.pendingCount.value.toString()
                           : null,
@@ -504,8 +532,8 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                     () => _simpleRow(
                       icon: Icons.refresh_sharp,
                       color: Colors.deepOrange,
-                      title: "Queue status",
-                      subtitle: "Refresh pending queues from server",
+                      title: "Check Submission Status",
+                      subtitle: "Check the status of submitted records",
                       onTap: controller.actionRefreshQueues,
                       badge: controller.pendingQueuesCount.value != 0
                           ? controller.pendingQueuesCount.value.toString()
@@ -537,7 +565,7 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                             _simpleRow(
                               icon: Icons.clear_all,
                               color: Colors.brown,
-                              title: "Clear Pending Queue",
+                              title: "Delete Pending Submissions",
                               subtitle: "Delete all pending submissions",
                               onTap: controller.actionClearPending,
                             ),
@@ -555,8 +583,9 @@ class OfflineListingPage extends GetView<OfflineFormController> {
                             _simpleRow(
                               icon: Icons.warning,
                               color: Colors.red.shade900,
-                              title: "Clear ALL Offline Data",
-                              subtitle: "Deletes everything except user",
+                              title: "Delete All Offline Data",
+                              subtitle:
+                                  "Remove all offline data except your user profile",
                               onTap: controller.actionClearAll,
                               isDanger: true,
                             ),
@@ -599,6 +628,7 @@ class OfflineListingPage extends GetView<OfflineFormController> {
     required VoidCallback onTap,
     bool isDanger = false,
     bool isDisabled = false,
+    bool isBusy = false,
     String? badge,
   }) {
     final Color iconColor = isDisabled ? Colors.grey.shade400 : color;
@@ -621,7 +651,16 @@ class OfflineListingPage extends GetView<OfflineFormController> {
         dense: true,
         visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
         enabled: !isDisabled,
-        leading: Icon(icon, size: 20, color: iconColor),
+        leading: isBusy
+            ? SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: iconColor,
+                ),
+              )
+            : Icon(icon, size: 20, color: iconColor),
         title: Text(
           title,
           style: GoogleFonts.poppins(

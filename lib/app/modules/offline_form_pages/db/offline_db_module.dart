@@ -26,8 +26,14 @@ import '../controller/offline_form_controller.dart';
 import '../models/models.dart';
 import 'offline_datasources.dart';
 import 'offline_db_constants.dart';
+import 'offline_notification_store.dart';
+import '../models/offline_notification_model.dart';
+import '../models/offline_refresh_report.dart';
+import '../models/offline_batch_banner_updates.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+
+part 'offline_notifications.dart';
 
 enum SubmitStatus { success, savedOffline, apiFailure, sqlFailure }
 
@@ -128,12 +134,25 @@ class OfflineDbModule {
 
     _db = await openDatabase(
       dbPath,
-      version: 12,
+      version: 13,
       onCreate: (db, _) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         const tag = "[OFFLINE_DB_UPGRADE_006]";
+
+        if (oldVersion < 13) {
+          await OfflineNotificationStore.create(db);
+          await db.execute(
+            "ALTER TABLE ${OfflineDBConstants.TABLE_PENDING_REQUESTS} ADD COLUMN current_queue_id TEXT NOT NULL DEFAULT ''",
+          );
+          await db.execute(
+            'ALTER TABLE ${OfflineDBConstants.TABLE_PENDING_REQUESTS} ADD COLUMN record_version INTEGER NOT NULL DEFAULT 0',
+          );
+          LogService.writeLog(
+            message: '[V13] Offline notifications and correction guards added.',
+          );
+        }
 
         if (oldVersion < 12) {
           await db.execute(OfflineDBConstants.CREATE_SYNC_LOCK_TABLE);
@@ -303,6 +322,13 @@ class OfflineDbModule {
     await db.execute(OfflineDBConstants.CREATE_AUDIT_LOGS_TABLE);
     await db.execute(OfflineDBConstants.CREATE_CACHED_SAVE_QUEUE_TABLE);
     await db.execute(OfflineDBConstants.CREATE_SYNC_LOCK_TABLE);
+    await OfflineNotificationStore.create(db);
+    await db.execute(
+      "ALTER TABLE ${OfflineDBConstants.TABLE_PENDING_REQUESTS} ADD COLUMN current_queue_id TEXT NOT NULL DEFAULT ''",
+    );
+    await db.execute(
+      'ALTER TABLE ${OfflineDBConstants.TABLE_PENDING_REQUESTS} ADD COLUMN record_version INTEGER NOT NULL DEFAULT 0',
+    );
   }
 
   static Future<bool> tryAcquireCachedSaveLock({
@@ -626,19 +652,23 @@ class OfflineDbModule {
   //   }
   // }
 
-  static Future<List<Map<String, dynamic>>> fetchAndStoreOfflinePages() async {
+  static Future<List<Map<String, dynamic>>> fetchAndStoreOfflinePages({
+    String? transId,
+  }) async {
     final scope = await _getLastOfflineUserScope();
     if (scope == null) return [];
 
     return _fetchAndStoreOfflinePagesInternal(
       username: scope['username']!,
       projectName: scope['projectName']!,
+      transId: transId,
     );
   }
 
   static Future<List<Map<String, dynamic>>> _fetchAndStoreOfflinePagesInternal({
     required String username,
     required String projectName,
+    String? transId,
   }) async {
     const String tag = "[OFFLINE_PAGES_FETCH_001]";
 
@@ -656,13 +686,21 @@ class OfflineDbModule {
 
       log(res.body, name: tag);
       if (res.statusCode != 200) {
+        if (transId != null) return [];
         if (Get.isRegistered<GlobalVariableController>()) {
           GlobalVariableController.to.OFFLINE_FORMS_COUNT.value = 0;
           return [];
         }
       }
       final decoded = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
-      final pages = decoded.map((e) => e as Map<String, dynamic>).toList();
+      final serverPages = decoded
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+      // Filter before deleting anything; an unavailable form keeps its cache.
+      final pages = transId == null
+          ? serverPages
+          : serverPages.where((page) => page['transid'] == transId).toList();
+      if (transId != null && pages.isEmpty) return [];
       await logAudit(
         action: "FETCH_OFFLINE_FORMS",
         response: res.toString(),
@@ -681,61 +719,72 @@ class OfflineDbModule {
       }
 
       try {
-        if (Get.isRegistered<GlobalVariableController>()) {
+        if (transId == null && Get.isRegistered<GlobalVariableController>()) {
           GlobalVariableController.to.OFFLINE_FORMS_COUNT.value = pages.length;
         }
       } catch (_) {}
       log("OFFLINE_FORMS_COUNT = ${pages.length}", name: tag);
-      final batchDelete = _database.batch();
-      batchDelete.delete(
-        OfflineDBConstants.TABLE_OFFLINE_PAGES,
-        where:
-            '${OfflineDBConstants.COL_USERNAME} = ? AND ${OfflineDBConstants.COL_PROJECT_NAME} = ?',
-        whereArgs: [username, projectName],
-      );
-      batchDelete.delete(
-        OfflineDBConstants.TABLE_DATASOURCES,
-        where:
-            '${OfflineDBConstants.COL_USERNAME} = ? AND ${OfflineDBConstants.COL_PROJECT_NAME} = ?',
-        whereArgs: [username, projectName],
-      );
-      await batchDelete.commit(noResult: true);
-
-      final batchInsert = _database.batch();
-
-      for (final page in pages) {
-        final String transId = page['transid'] ?? "";
-
-        batchInsert.insert(
+      // Commit replacement atomically so offline readers never see a gap.
+      await _database.transaction((txn) async {
+        final batchDelete = txn.batch();
+        final where =
+            '${OfflineDBConstants.COL_USERNAME} = ? AND '
+            '${OfflineDBConstants.COL_PROJECT_NAME} = ?'
+            '${transId == null ? '' : ' AND ${OfflineDBConstants.COL_TRANS_ID} = ?'}';
+        final whereArgs = <Object>[
+          username,
+          projectName,
+          if (transId != null) transId,
+        ];
+        batchDelete.delete(
           OfflineDBConstants.TABLE_OFFLINE_PAGES,
-          {
-            OfflineDBConstants.COL_USERNAME: username,
-            OfflineDBConstants.COL_PROJECT_NAME: projectName,
-            OfflineDBConstants.COL_TRANS_ID: transId,
-            OfflineDBConstants.COL_PAGE_JSON: jsonEncode(page),
-            OfflineDBConstants.COL_FETCHED_AT: DateTime.now().toIso8601String(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
+          where: where,
+          whereArgs: whereArgs,
         );
+        batchDelete.delete(
+          OfflineDBConstants.TABLE_DATASOURCES,
+          where: where,
+          whereArgs: whereArgs,
+        );
+        await batchDelete.commit(noResult: true);
 
-        final Set<String> dsSet = _getAllUniqueDatasourcesInPage(page);
-        if (dsSet.isNotEmpty) {
-          final String dsString = dsSet.join(',');
+        final batchInsert = txn.batch();
+
+        for (final page in pages) {
+          final String transId = page['transid'] ?? "";
 
           batchInsert.insert(
-            OfflineDBConstants.TABLE_DATASOURCES,
+            OfflineDBConstants.TABLE_OFFLINE_PAGES,
             {
               OfflineDBConstants.COL_USERNAME: username,
               OfflineDBConstants.COL_PROJECT_NAME: projectName,
               OfflineDBConstants.COL_TRANS_ID: transId,
-              OfflineDBConstants.COL_DATASOURCE_NAMES: dsString,
+              OfflineDBConstants.COL_PAGE_JSON: jsonEncode(page),
+              OfflineDBConstants.COL_FETCHED_AT: DateTime.now()
+                  .toIso8601String(),
             },
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
-        }
-      }
 
-      await batchInsert.commit(noResult: true);
+          final Set<String> dsSet = _getAllUniqueDatasourcesInPage(page);
+          if (dsSet.isNotEmpty) {
+            final String dsString = dsSet.join(',');
+
+            batchInsert.insert(
+              OfflineDBConstants.TABLE_DATASOURCES,
+              {
+                OfflineDBConstants.COL_USERNAME: username,
+                OfflineDBConstants.COL_PROJECT_NAME: projectName,
+                OfflineDBConstants.COL_TRANS_ID: transId,
+                OfflineDBConstants.COL_DATASOURCE_NAMES: dsString,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
+
+        await batchInsert.commit(noResult: true);
+      });
       await logAudit(
         action: "FETCH_OFFLINE_FORMS",
         remarks: "Successfully downloaded and stored ${pages.length} forms",
@@ -841,9 +890,16 @@ class OfflineDbModule {
     required String transId,
     SyncProgressModel? progress,
     bool isrefetching = false,
+    bool throwOnError = false,
+    SyncProgressModel? operationProgress,
+    Future<void> Function(String transId, String datasource, String error)?
+    onLookupFailure,
   }) async {
     final scope = await _getLastOfflineUserScope();
-    if (scope == null) return;
+    if (scope == null) {
+      if (throwOnError) throw StateError('Offline user scope is unavailable');
+      return;
+    }
     log(
       "fetchAndStoreAllDatasources scope => $scope transID => $transId",
       name: "datasourcerefetch",
@@ -855,6 +911,9 @@ class OfflineDbModule {
       transId: transId,
       progress: progress,
       isrefetching: isrefetching,
+      throwOnError: throwOnError,
+      operationProgress: operationProgress,
+      onLookupFailure: onLookupFailure,
     );
   }
 
@@ -964,13 +1023,38 @@ class OfflineDbModule {
     required String transId,
     SyncProgressModel? progress,
     bool isrefetching = false,
+    bool throwOnError = false,
+    SyncProgressModel? operationProgress,
+    Future<void> Function(String transId, String datasource, String error)?
+    onLookupFailure,
   }) async {
+    final initialProcessed = progress?.processedItems.value ?? 0;
+    int requestedCount = 0;
+    bool bulkRequested = false;
+    bool bulkSucceeded = false;
+    final dsToFetch = <String>[];
+    final knownDatasources = <String>[];
+    final completed = <String>{};
+    final reported = <String>{};
+    Future<void> reportFailure(String ds, String error) async {
+      if (onLookupFailure == null || !reported.add(ds)) return;
+      try {
+        await onLookupFailure(transId, ds, error);
+      } catch (e) {
+        LogService.writeLog(
+          message:
+              '[OFFLINE_NOTIFICATION] Lookup observer failed form=$transId ds=$ds: $e',
+        );
+      }
+    }
+
     try {
       final datasources = await _getDatasourceList(
         username: username,
         projectName: projectName,
         transId: transId,
       );
+      knownDatasources.addAll(datasources);
       log(
         "fetchAndStoreAllDatasources datasources => $datasources transID => $transId",
         name: "datasourcerefetch",
@@ -983,7 +1067,6 @@ class OfflineDbModule {
 
       progress?.totalItems.value = datasources.length;
 
-      final List<String> dsToFetch = [];
       for (final ds in datasources) {
         final exists = await _database.query(
           OfflineDBConstants.TABLE_DATASOURCE_DATA,
@@ -1005,6 +1088,7 @@ class OfflineDbModule {
         );
 
         if (exists.isNotEmpty && !isrefetching) {
+          completed.add(ds);
           log(
             "exists => ${exists.isNotEmpty} skipping refetch",
             name: "datasourcerefetch",
@@ -1022,6 +1106,7 @@ class OfflineDbModule {
         );
         return;
       }
+      requestedCount = dsToFetch.length;
 
       log(
         "isrefetching => $isrefetching refetching ${dsToFetch.length} datasource(s) in bulk",
@@ -1031,6 +1116,10 @@ class OfflineDbModule {
       // scope/session only needs to be fetched once, not per-ds
       final scope = await _getLastOfflineUserScope();
       if (scope == null) {
+        for (final ds in dsToFetch) {
+          await reportFailure(ds, 'Offline session is unavailable');
+        }
+        if (throwOnError) throw StateError('Offline user scope is unavailable');
         log(
           "No offline user scope found — aborting transID => $transId",
           name: "datasourcerefetch",
@@ -1041,15 +1130,24 @@ class OfflineDbModule {
 
       // ── 2. One bulk call for every datasource this page needs ───────────
       Map<String, String> results;
+      final failureMessages = <String, String>{};
       try {
+        // Add an operation only when this form actually needs a bulk request.
+        bulkRequested = true;
+        operationProgress?.totalItems.value++;
         results = await OfflineDatasources.fetchDatasourceBulk(
           datasourceNames: dsToFetch,
           sessionId: session,
           username: scope['username']!,
           appName: scope['projectName']!,
           sqlParams: {"username": scope['username']!},
+          failureMessages: failureMessages,
         ).timeout(const Duration(seconds: 15));
       } on TimeoutException catch (e) {
+        for (final ds in dsToFetch) {
+          await reportFailure(ds, 'Lookup download timed out');
+        }
+        if (throwOnError) rethrow;
         debugPrint("Bulk datasource fetch timed out for transID=$transId: $e");
         log(
           "TIMEOUT fetching ${dsToFetch.length} datasource(s) for transID=$transId",
@@ -1058,16 +1156,30 @@ class OfflineDbModule {
         for (final _ in dsToFetch) {
           progress?.increment(isSuccess: false);
         }
+        progress?.addErrors(
+          title: transId,
+          errorText: 'Lookup download timed out',
+        );
         return;
       }
+
+      // Several missing datasources belong to one failed bulk operation.
+      bulkSucceeded = dsToFetch.every((ds) => results[ds]?.isNotEmpty == true);
 
       for (final ds in dsToFetch) {
         progress?.updateMessage("Fetching: $ds\n(Form: $transId)");
 
         final String? res = results[ds];
         if (res == null || res.isEmpty) {
+          await reportFailure(
+            ds,
+            failureMessages[ds] ?? 'No lookup data returned',
+          );
+          completed.add(ds);
+          if (throwOnError) throw StateError('No lookup data returned for $ds');
           debugPrint("Empty response for DS: $ds");
           progress?.increment(isSuccess: false);
+          progress?.addErrors(title: ds, errorText: 'No lookup data returned');
           continue;
         }
 
@@ -1084,6 +1196,7 @@ class OfflineDbModule {
         );
 
         progress?.increment();
+        completed.add(ds);
       }
 
       await logAudit(
@@ -1093,6 +1206,13 @@ class OfflineDbModule {
             "requested datasource(s) for transID=$transId",
       );
     } catch (e) {
+      bulkSucceeded = false;
+      for (final ds in knownDatasources.where(
+        (ds) => !completed.contains(ds),
+      )) {
+        await reportFailure(ds, e.toString());
+      }
+      if (knownDatasources.isEmpty) await reportFailure('', e.toString());
       await logAudit(
         action: "FETCH_ALL_DATA_SOURCES",
         isError: true,
@@ -1100,7 +1220,29 @@ class OfflineDbModule {
         remarks: "_fetchAndStoreAllDatasourcesInternal catch block",
       );
       debugPrint("Error fetching datasources for $transId: $e");
-      progress?.increment(isSuccess: false);
+      // Preserve successes already stored, and count every remaining lookup.
+      final remaining =
+          requestedCount -
+          ((progress?.processedItems.value ?? initialProcessed) -
+              initialProcessed);
+      for (
+        int i = 0;
+        i <
+            (remaining > 0
+                ? remaining
+                : requestedCount == 0
+                ? 1
+                : 0);
+        i++
+      ) {
+        progress?.increment(isSuccess: false);
+      }
+      progress?.addErrors(title: transId, errorText: e.toString());
+      if (throwOnError) rethrow;
+    } finally {
+      if (bulkRequested) {
+        operationProgress?.increment(isSuccess: bulkSucceeded);
+      }
     }
   }
 
@@ -3152,19 +3294,50 @@ class OfflineDbModule {
   static Future<void> refreshAllDatasourcesFromDownloadedPages({
     SyncProgressModel? progressModel,
     bool isrefetching = false,
+    String? transId,
+    SyncProgressModel? operationProgress,
+    Future<void> Function(String transId, String datasource, String error)?
+    onLookupFailure,
+    Future<void> Function(String transId, int updated, int failed)?
+    onFormLookupResult,
   }) async {
     var pages = await OfflineDbModule.getOfflinePages();
+    // An omitted ID preserves the existing refresh-all callers.
+    if (transId != null) {
+      pages = pages.where((page) => page['transid'] == transId).toList();
+    }
     log("getOfflinePages length => ${pages.length}", name: "datasourcerefetch");
     if (pages.isEmpty) return;
     progressModel?.init(total: pages.length, msg: "Analyzing forms...");
     for (final p in pages) {
-      final transId = p['transid'];
-      if (transId != null) {
+      final pageId = p['transid'];
+      if (pageId != null) {
+        final previousUpdated = progressModel?.successCount.value ?? 0;
+        final previousFailed = progressModel?.failureCount.value ?? 0;
         await fetchAndStoreAllDatasources(
-          transId: transId,
+          transId: pageId,
           progress: progressModel,
           isrefetching: isrefetching,
+          // A supplied progress model records failures and lets other lookups
+          // continue. Callers without one retain selected-refresh exceptions.
+          throwOnError: transId != null && progressModel == null,
+          operationProgress: operationProgress,
+          onLookupFailure: onLookupFailure,
         );
+        // Observe existing progress deltas; do not add requests or change counts.
+        if (onFormLookupResult != null && progressModel != null) {
+          try {
+            await onFormLookupResult(
+              pageId.toString(),
+              progressModel.successCount.value - previousUpdated,
+              progressModel.failureCount.value - previousFailed,
+            );
+          } catch (e) {
+            LogService.writeLog(
+              message: '[OFFLINE_NOTIFICATION] Form lookup observer failed: $e',
+            );
+          }
+        }
       }
     }
   }
@@ -4313,6 +4486,16 @@ class OfflineDbModule {
       );
 
       if (payloadData == null) {
+        await OfflineNotifications.add(
+          username: username,
+          projectName: projectName,
+          eventKey: 'build-failed:${getGUID()}',
+          type: 'batch_error',
+          queueId: '',
+          title: 'Batch could not be prepared',
+          message:
+              'Your records are kept offline. Please try sending them again.',
+        );
         LogService.writeLog(
           message: "$tag Stopping build loop: failed to build payload.",
         );
@@ -4503,6 +4686,16 @@ class OfflineDbModule {
 
         return true; // Success!
       } else {
+        await OfflineNotifications.add(
+          username: username,
+          projectName: projectName,
+          eventKey: '${payload.queueId}:push-failed',
+          type: 'batch_error',
+          queueId: payload.queueId,
+          title: 'Batch could not be sent',
+          message:
+              'Your records are kept offline. Please try sending them again.',
+        );
         await logAudit(
           action: _cachedSaveTag,
           isError: true,
@@ -4522,6 +4715,16 @@ class OfflineDbModule {
       }
     } catch (e) {
       LogService.writeLog(message: "$_cachedSaveTag UPLOAD EXCEPTION: $e");
+      await OfflineNotifications.add(
+        username: username,
+        projectName: projectName,
+        eventKey: '${payload.queueId}:push-failed',
+        type: 'batch_error',
+        queueId: payload.queueId,
+        title: 'Batch could not be sent',
+        message:
+            'An error occurred while sending the batch. Your records are kept offline.',
+      );
       controller.updateQueueItem(
         payload.queueId,
         (model) => model.copyWith(
@@ -5724,6 +5927,10 @@ class OfflineDbModule {
             "$tag [RESOLVE_QUEUE] Could not extract inner data for "
             "queue_id=$queueId — leaving queue/pending rows untouched.",
       );
+      await OfflineNotifications.queueIssue(
+        queueId,
+        'The detailed processing response could not be read. Please check submission status again.',
+      );
       await logAudit(
         action: tag,
         isError: true,
@@ -5741,6 +5948,80 @@ class OfflineDbModule {
     }
 
     final String innerStatus = innerData['status']?.toString() ?? '';
+
+    final queueInfo = await _database.query(
+      OfflineDBConstants.TABLE_CACHED_SAVE_QUEUE,
+      columns: [OfflineDBConstants.COL_AXM_RECIDS],
+      where: 'queue_id = ?',
+      whereArgs: [queueId],
+      limit: 1,
+    );
+    if (queueInfo.isEmpty) {
+      return QueueResolveResultModel(
+        queueId: queueId,
+        finalStatus: null,
+        successCount: 0,
+        failedCount: 0,
+      );
+    }
+    final expectedIds =
+        (jsonDecode(
+                  queueInfo.single[OfflineDBConstants.COL_AXM_RECIDS]
+                          as String? ??
+                      '[]',
+                )
+                as List)
+            .map((id) => int.tryParse(id.toString()))
+            .toSet();
+    final reportedSuccess = _parseTransactionList(
+      innerData['success_transactions'],
+    );
+    final reportedFailure = _parseTransactionList(
+      innerData['failed_transactions'],
+    );
+    final reportedIds = [
+      ...reportedSuccess,
+      ...reportedFailure,
+    ].map((item) => int.tryParse(item['axm_recid']?.toString() ?? '')).toSet();
+    // A complete success status without item lists retains the existing full
+    // success behavior. Supplied item lists must describe this entire batch.
+    if ((innerStatus != 'success' || reportedIds.isNotEmpty) &&
+        (reportedIds.contains(null) ||
+            reportedIds.length != expectedIds.length ||
+            !reportedIds.containsAll(expectedIds) ||
+            (innerStatus == 'success' && reportedFailure.isNotEmpty))) {
+      await OfflineNotifications.queueIssue(
+        queueId,
+        'The detailed results do not identify all records in this batch correctly. Please check submission status again.',
+      );
+      return QueueResolveResultModel(
+        queueId: queueId,
+        finalStatus: null,
+        successCount: 0,
+        failedCount: 0,
+      );
+    }
+
+    if (innerData['axm_queueid']?.toString() != queueId ||
+        ![
+          'success',
+          'partial_success',
+          'partial',
+          'failed',
+          'failure',
+          'error',
+        ].contains(innerStatus)) {
+      await OfflineNotifications.queueIssue(
+        queueId,
+        'The detailed response is incomplete or belongs to another batch. Please check submission status again.',
+      );
+      return QueueResolveResultModel(
+        queueId: queueId,
+        finalStatus: null,
+        successCount: 0,
+        failedCount: 0,
+      );
+    }
 
     LogService.writeLog(
       message:
@@ -5778,6 +6059,12 @@ class OfflineDbModule {
                     as List)
                 .length;
       }
+      await OfflineNotifications.queueResult(
+        queueId,
+        innerData,
+        successCount: total,
+        failedCount: 0,
+      );
       return QueueResolveResultModel(
         queueId: queueId,
         finalStatus: OfflineDBConstants.QUEUE_STATUS_SUCCESS,
@@ -5793,6 +6080,38 @@ class OfflineDbModule {
     final List<Map<String, dynamic>> failedItems = _parseTransactionList(
       innerData['failed_transactions'],
     );
+
+    final successIds = successItems
+        .map((e) => int.tryParse(e['axm_recid']?.toString() ?? ''))
+        .toSet();
+    final failureIds = failedItems
+        .map((e) => int.tryParse(e['axm_recid']?.toString() ?? ''))
+        .toSet();
+    if ((successItems.isEmpty && failedItems.isEmpty) ||
+        successIds.contains(null) ||
+        failureIds.contains(null) ||
+        successIds.intersection(failureIds).isNotEmpty) {
+      await OfflineNotifications.queueIssue(
+        queueId,
+        'Record results are missing or conflicting. No record status was changed. Please check submission status again.',
+      );
+      return QueueResolveResultModel(
+        queueId: queueId,
+        finalStatus: null,
+        successCount: 0,
+        failedCount: 0,
+      );
+    }
+    final eligible = (await OfflineNotifications.eligibleIds(queueId)).toSet();
+    final seenSuccess = <int>{}, seenFailed = <int>{};
+    successItems.removeWhere((item) {
+      final id = int.tryParse(item['axm_recid']?.toString() ?? '');
+      return id == null || !eligible.contains(id) || !seenSuccess.add(id);
+    });
+    failedItems.removeWhere((item) {
+      final id = int.tryParse(item['axm_recid']?.toString() ?? '');
+      return id == null || !eligible.contains(id) || !seenFailed.add(id);
+    });
 
     LogService.writeLog(
       message:
@@ -5827,6 +6146,7 @@ class OfflineDbModule {
         recId,
         OfflineDBConstants.RECORD_STATUS_SUCCESS,
         "success",
+        queueId: queueId,
       );
       LogService.writeLog(
         message:
@@ -5846,13 +6166,12 @@ class OfflineDbModule {
         continue;
       }
       failedRecIds.add(recId);
-      final String errorMsg =
-          item['error_message']?['result']?['message']?.toString() ??
-          "Unknown error";
+      final String errorMsg = OfflineNotifications.errorMessage(item);
       await _updateStatusAndResponse(
         recId,
         OfflineDBConstants.RECORD_STATUS_ERROR,
         errorMsg,
+        queueId: queueId,
       );
       LogService.writeLog(
         message:
@@ -5912,9 +6231,9 @@ class OfflineDbModule {
     );
 
     // ── Determine final queue status ─────────────────────────────────────────
-    final int finalQueueStatus = failedRecIds.isEmpty
+    final int finalQueueStatus = failureIds.isEmpty
         ? OfflineDBConstants.QUEUE_STATUS_SUCCESS
-        : successRecIds.isEmpty
+        : successIds.isEmpty
         ? OfflineDBConstants.QUEUE_STATUS_ERROR
         : OfflineDBConstants.QUEUE_STATUS_PARTIAL;
 
@@ -5950,11 +6269,18 @@ class OfflineDbModule {
 
     LogService.writeLog(message: "$tag [RESOLVE_QUEUE] DONE queue_id=$queueId");
 
+    await OfflineNotifications.queueResult(
+      queueId,
+      innerData,
+      successCount: successIds.length,
+      failedCount: failureIds.length,
+    );
+
     return QueueResolveResultModel(
       queueId: queueId,
       finalStatus: finalQueueStatus,
-      successCount: successRecIds.length,
-      failedCount: failedRecIds.length,
+      successCount: successIds.length,
+      failedCount: failureIds.length,
     );
   }
   // static Future<void> _resolveSingleQueueFromRow({
@@ -6375,8 +6701,88 @@ class OfflineDbModule {
   //   }
   // }
 
+  // Previous implementation: retained for comparison only.
+  //   static Future<int> savePayloadForQueue({
+  //     required Map<String, dynamic> payload,
+  //   }) async {
+  //     const String tag = "[SAVE_PAYLOAD_FOR_QUEUE]";
+  //
+  //     final scope = await _getLastOfflineUserScope();
+  //     if (scope == null) {
+  //       LogService.writeLog(message: "$tag No user scope — aborting.");
+  //       return -1;
+  //     }
+  //
+  //     final String username = scope['username']!;
+  //     final String projectName = scope['projectName']!;
+  //
+  //     try {
+  //       // ── Step 1: Read current seq from sqlite_sequence ────────
+  //       // AUTOINCREMENT guarantees next id = seq + 1.
+  //       // If table has never been inserted into, sqlite_sequence
+  //       // won't have a row for it yet — default to 0 in that case.
+  //       final List<Map<String, dynamic>> seqResult = await _database.rawQuery(
+  //         "SELECT seq FROM sqlite_sequence WHERE name = ?",
+  //         [OfflineDBConstants.TABLE_PENDING_REQUESTS],
+  //       );
+  //
+  //       final int currentSeq = seqResult.isNotEmpty
+  //           ? (seqResult.first['seq'] as int? ?? 0)
+  //           : 0;
+  //
+  //       final int nextRowId = currentSeq + 1;
+  //
+  //       // ── Step 2: Stamp axm_recid into payload BEFORE insert ───
+  //       final Map<String, dynamic> stampedPayload = Map<String, dynamic>.from(
+  //         payload,
+  //       );
+  //       stampedPayload['axm_recid'] = nextRowId.toString();
+  //
+  //       // ── Step 3: insert ────────────────────────────────
+  //       final int insertedId = await _database.insert(
+  //         OfflineDBConstants.TABLE_PENDING_REQUESTS,
+  //         {
+  //           OfflineDBConstants.COL_USERNAME: username,
+  //           OfflineDBConstants.COL_PROJECT_NAME: projectName,
+  //           OfflineDBConstants.COL_REQUEST_JSON: jsonEncode(stampedPayload),
+  //           OfflineDBConstants.COL_STATUS:
+  //               OfflineDBConstants.RECORD_STATUS_PENDING,
+  //           OfflineDBConstants.COL_CREATED_AT: DateTime.now().toIso8601String(),
+  //         },
+  //         conflictAlgorithm: ConflictAlgorithm.replace,
+  //       );
+  //
+  //       // ── Step 4: Sanity check (debug only) ───────────────────
+  //       // insertedId should always equal nextRowId.
+  //       // Log a warning if they diverge (shouldn't happen with AUTOINCREMENT).
+  //       if (insertedId != nextRowId) {
+  //         LogService.writeLog(
+  //           message:
+  //               "$tag WARNING: predicted=$nextRowId actual=$insertedId "
+  //               "— axm_recid in JSON is $nextRowId but row id is $insertedId. "
+  //               "This should not happen with AUTOINCREMENT.",
+  //         );
+  //       }
+  //
+  //       LogService.writeLog(
+  //         message:
+  //             "$tag saved rowId=$insertedId transid=${payload['transid']} "
+  //             "axm_recid=$nextRowId",
+  //       );
+  //
+  //       return insertedId;
+  //     } catch (e) {
+  //       LogService.writeLog(message: "$tag Exception: $e");
+  //       return -1;
+  //     }
+  //   }
+
   static Future<int> savePayloadForQueue({
     required Map<String, dynamic> payload,
+    int? existingRecordId,
+    int? expectedVersion,
+    String? expectedUsername,
+    String? expectedProjectName,
   }) async {
     const String tag = "[SAVE_PAYLOAD_FOR_QUEUE]";
 
@@ -6389,64 +6795,117 @@ class OfflineDbModule {
     final String username = scope['username']!;
     final String projectName = scope['projectName']!;
 
+    String? correctionLock;
     try {
-      // ── Step 1: Read current seq from sqlite_sequence ────────
-      // AUTOINCREMENT guarantees next id = seq + 1.
-      // If table has never been inserted into, sqlite_sequence
-      // won't have a row for it yet — default to 0 in that case.
-      final List<Map<String, dynamic>> seqResult = await _database.rawQuery(
-        "SELECT seq FROM sqlite_sequence WHERE name = ?",
-        [OfflineDBConstants.TABLE_PENDING_REQUESTS],
-      );
-
-      final int currentSeq = seqResult.isNotEmpty
-          ? (seqResult.first['seq'] as int? ?? 0)
-          : 0;
-
-      final int nextRowId = currentSeq + 1;
-
-      // ── Step 2: Stamp axm_recid into payload BEFORE insert ───
-      final Map<String, dynamic> stampedPayload = Map<String, dynamic>.from(
-        payload,
-      );
-      stampedPayload['axm_recid'] = nextRowId.toString();
-
-      // ── Step 3: insert ────────────────────────────────
-      final int insertedId = await _database.insert(
-        OfflineDBConstants.TABLE_PENDING_REQUESTS,
-        {
-          OfflineDBConstants.COL_USERNAME: username,
-          OfflineDBConstants.COL_PROJECT_NAME: projectName,
-          OfflineDBConstants.COL_REQUEST_JSON: jsonEncode(stampedPayload),
-          OfflineDBConstants.COL_STATUS:
-              OfflineDBConstants.RECORD_STATUS_PENDING,
-          OfflineDBConstants.COL_CREATED_AT: DateTime.now().toIso8601String(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-
-      // ── Step 4: Sanity check (debug only) ───────────────────
-      // insertedId should always equal nextRowId.
-      // Log a warning if they diverge (shouldn't happen with AUTOINCREMENT).
-      if (insertedId != nextRowId) {
-        LogService.writeLog(
-          message:
-              "$tag WARNING: predicted=$nextRowId actual=$insertedId "
-              "— axm_recid in JSON is $nextRowId but row id is $insertedId. "
-              "This should not happen with AUTOINCREMENT.",
-        );
+      if (existingRecordId != null) {
+        if (expectedUsername != username ||
+            expectedProjectName != projectName ||
+            expectedVersion == null) {
+          throw StateError(
+            'The offline user/project changed. Please reopen the record.',
+          );
+        }
+        // Briefly share the existing sync lock only while committing a correction.
+        // Opening and editing the form never blocks background synchronization.
+        correctionLock = 'correction:$existingRecordId:${getGUID()}';
+        if (!await tryAcquireCachedSaveLock(owner: correctionLock)) {
+          correctionLock = null;
+          throw StateError(
+            'Sync is currently active. Please save again when it finishes.',
+          );
+        }
       }
+      final int insertedId = await _database.transaction<int>((txn) async {
+        final Map<String, dynamic> stampedPayload = Map<String, dynamic>.from(
+          payload,
+        );
+
+        if (existingRecordId != null) {
+          // Compare the loaded version so another save/result cannot be overwritten.
+          stampedPayload['axm_recid'] = existingRecordId.toString();
+          final changed = await txn.update(
+            OfflineDBConstants.TABLE_PENDING_REQUESTS,
+            {
+              OfflineDBConstants.COL_REQUEST_JSON: jsonEncode(stampedPayload),
+              OfflineDBConstants.COL_STATUS:
+                  OfflineDBConstants.RECORD_STATUS_PENDING,
+              OfflineDBConstants.COL_RESPONSE: '',
+              'current_queue_id': '',
+              'record_version': expectedVersion! + 1,
+            },
+            where:
+                'id = ? AND username = ? AND project_name = ? AND record_version = ? AND status IN (?, ?)',
+            whereArgs: [
+              existingRecordId,
+              username,
+              projectName,
+              expectedVersion,
+              OfflineDBConstants.RECORD_STATUS_ERROR,
+              OfflineDBConstants.RECORD_STATUS_PENDING,
+            ],
+          );
+          if (changed != 1)
+            throw StateError(
+              'Record changed or is already queued. Please reopen it.',
+            );
+          return existingRecordId;
+        }
+
+        // Obtain the actual SQLite-generated ID before stamping the payload.
+        final int rowId = await txn.insert(
+          OfflineDBConstants.TABLE_PENDING_REQUESTS,
+          {
+            OfflineDBConstants.COL_USERNAME: username,
+            OfflineDBConstants.COL_PROJECT_NAME: projectName,
+            OfflineDBConstants.COL_REQUEST_JSON: jsonEncode(stampedPayload),
+            OfflineDBConstants.COL_STATUS:
+                OfflineDBConstants.RECORD_STATUS_PENDING,
+            OfflineDBConstants.COL_CREATED_AT: DateTime.now().toIso8601String(),
+          },
+        );
+
+        stampedPayload['axm_recid'] = rowId.toString();
+        final int updatedRows = await txn.update(
+          OfflineDBConstants.TABLE_PENDING_REQUESTS,
+          {OfflineDBConstants.COL_REQUEST_JSON: jsonEncode(stampedPayload)},
+          where: '${OfflineDBConstants.COL_ID} = ?',
+          whereArgs: [rowId],
+        );
+
+        if (updatedRows != 1) {
+          // Throwing rolls back both the insert and payload update.
+          throw StateError("Failed to stamp axm_recid for rowId=$rowId.");
+        }
+
+        return rowId;
+      });
 
       LogService.writeLog(
         message:
             "$tag saved rowId=$insertedId transid=${payload['transid']} "
-            "axm_recid=$nextRowId",
+            "axm_recid=$insertedId",
       );
-
+      if (existingRecordId != null) {
+        await logAudit(
+          action: 'OFFLINE_RECORD_CORRECTION',
+          remarks:
+              'Updated existing record=$insertedId transid=${payload['transid']} version=${expectedVersion! + 1}; ready for sync.',
+        );
+      }
       return insertedId;
     } catch (e) {
       LogService.writeLog(message: "$tag Exception: $e");
+      if (existingRecordId != null) {
+        await logAudit(
+          action: 'OFFLINE_RECORD_CORRECTION',
+          isError: true,
+          remarks: 'Correction failed record=$existingRecordId: $e',
+        );
+      }
       return -1;
+    } finally {
+      if (correctionLock != null)
+        await releaseCachedSaveLock(owner: correctionLock);
     }
   }
 
@@ -7639,6 +8098,27 @@ class OfflineDbModule {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      if (sourceTable == OfflineDBConstants.TABLE_PENDING_REQUESTS &&
+          axmRecIds.isNotEmpty) {
+        // Bind records to their accepted queue, preventing old results from
+        // overwriting a correction or a newer submission of the same record.
+        await _database.update(
+          OfflineDBConstants.TABLE_PENDING_REQUESTS,
+          {'current_queue_id': queueId},
+          where:
+              'id IN (${List.filled(axmRecIds.length, '?').join(',')}) AND username = ? AND project_name = ?',
+          whereArgs: [...axmRecIds, username, projectName],
+        );
+        await OfflineNotifications.add(
+          username: username,
+          projectName: projectName,
+          eventKey: '$queueId:accepted',
+          type: 'batch_queued',
+          queueId: queueId,
+          title: 'Batch sent for processing',
+          message: '${axmRecIds.length} records sent. Waiting for processing.',
+        );
+      }
     } catch (e) {
       LogService.writeLog(message: "[SAVE_QUEUE_RECORD] Exception: $e");
     }
@@ -7685,17 +8165,28 @@ class OfflineDbModule {
 
   static List<Map<String, dynamic>> _parseTransactionList(dynamic raw) {
     if (raw == null) return [];
-    final dynamic decoded = raw is String ? jsonDecode(raw) : raw;
-    if (decoded is List) return decoded.cast<Map<String, dynamic>>();
+    try {
+      final dynamic decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is List)
+        return decoded
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+    } catch (e) {
+      LogService.writeLog(
+        message: '[QUEUE_RESULTS] Invalid transaction list: $e',
+      );
+    }
     return [];
   }
 
   static Future<void> processCachedSaveQueueFCM(
-    Map<String, dynamic> messageData,
-  ) async {
+    Map<String, dynamic> messageData, {
+    bool isBackground = false,
+  }) async {
     const String tag = "[FCM_PARSER]";
     OfflineFormController? offlineFormController =
-        Get.isRegistered<OfflineFormController>()
+        !isBackground && Get.isRegistered<OfflineFormController>()
         ? Get.find<OfflineFormController>()
         : null;
 
@@ -7715,12 +8206,18 @@ class OfflineDbModule {
         return;
       }
 
-      final int successCount =
-          int.tryParse(messageData['success_transactions']?.toString() ?? '') ??
-          0;
-      final int failedCount =
-          int.tryParse(messageData['failed_transactions']?.toString() ?? '') ??
-          0;
+      final int successCount = messageData['success_transactions'] is List
+          ? (messageData['success_transactions'] as List).length
+          : int.tryParse(
+                  messageData['success_transactions']?.toString() ?? '',
+                ) ??
+                0;
+      final int failedCount = messageData['failed_transactions'] is List
+          ? (messageData['failed_transactions'] as List).length
+          : int.tryParse(
+                  messageData['failed_transactions']?.toString() ?? '',
+                ) ??
+                0;
       final String message = messageData['message']?.toString() ?? '';
       // offlineFormController?.cachedSaveUpdateMessage.value =
       //     "Received FCM response for Queue ID: $queueId\n"
@@ -7742,6 +8239,7 @@ class OfflineDbModule {
         failedCount: failedCount,
         rawFcmPayload: jsonEncode(messageData),
         controller: offlineFormController,
+        isBackground: isBackground,
       );
 
       LogService.writeLog(
@@ -7765,16 +8263,28 @@ class OfflineDbModule {
     required int failedCount,
     String? rawFcmPayload,
     OfflineFormController? controller,
+    bool isBackground = false,
   }) async {
     const String tag = "[FCM_CACHED_SAVE_UPDATE]";
 
     final List<Map<String, dynamic>> queueRows = await _database.query(
       OfflineDBConstants.TABLE_CACHED_SAVE_QUEUE,
-      columns: [OfflineDBConstants.COL_SOURCE_TABLE],
       where: '${OfflineDBConstants.COL_QUEUE_ID} = ?',
       whereArgs: [queueId],
       limit: 1,
     );
+
+    if (queueRows.isEmpty) return;
+    final scope = await _getLastOfflineUserScope();
+    if (scope == null ||
+        queueRows.first['username'] != scope['username'] ||
+        queueRows.first['project_name'] != scope['projectName']) {
+      LogService.writeLog(
+        message:
+            '$tag Ignored trigger outside the current session scope queue=$queueId',
+      );
+      return;
+    }
 
     final String sourceTable = queueRows.isNotEmpty
         ? (queueRows.first[OfflineDBConstants.COL_SOURCE_TABLE]?.toString() ??
@@ -7794,6 +8304,83 @@ class OfflineDbModule {
       return;
     }
 
+    // The backend message is a trigger, not the authoritative record result.
+    // Use the existing detail API/parser for success, partial and failure alike.
+    if (queueRows.first['status'] != OfflineDBConstants.QUEUE_STATUS_PENDING)
+      return;
+    // Keep the trigger durable when the existing sync lock is busy.
+    if (rawFcmPayload != null) {
+      await _database.update(
+        OfflineDBConstants.TABLE_CACHED_SAVE_QUEUE,
+        {OfflineDBConstants.COL_FCM_RESPONSE: rawFcmPayload},
+        where: 'queue_id = ? AND status = ?',
+        whereArgs: [queueId, OfflineDBConstants.QUEUE_STATUS_PENDING],
+      );
+    }
+    final lockOwner = 'queue-result:$queueId:${getGUID()}';
+    if (!await tryAcquireCachedSaveLock(owner: lockOwner)) {
+      LogService.writeLog(
+        message: '$tag Result deferred to existing queue polling: $queueId',
+      );
+      return;
+    }
+    try {
+      Map<String, dynamic>? details;
+      if (isBackground) {
+        final rows = await _getActiveMessageDataBatchBackgroundSafe(
+          queueIds: [queueId],
+          sessionId: StorageService.sessionId ?? '',
+          authToken: StorageService.token ?? '',
+        );
+        for (final row in rows) {
+          if (row['msgtype']?.toString() == queueId) {
+            details = row;
+            break;
+          }
+        }
+      } else {
+        details = await _getActiveMessageData(
+          queueId: queueId,
+          sessionId: StorageService.sessionId ?? '',
+        );
+      }
+      if (details == null) {
+        await OfflineNotifications.queueIssue(
+          queueId,
+          'Processing update received, but detailed results are not available yet. Check submission status again.',
+        );
+        return; // Leave PENDING so manual/background polling can retry.
+      }
+      final result = await _resolveSingleQueueFromRow(
+        queueId: queueId,
+        row: details,
+        tag: tag,
+      );
+      controller?.registerReceivedQueueId(queueId);
+      controller?.updateQueueItem(
+        queueId,
+        (item) => item.copyWith(
+          successItems: result.successCount,
+          failedItems: result.failedCount,
+          fcmRecived: true,
+          submissionStatus:
+              result.finalStatus == OfflineDBConstants.QUEUE_STATUS_SUCCESS
+              ? QueueSubmissionStatus.success
+              : result.finalStatus == OfflineDBConstants.QUEUE_STATUS_PARTIAL
+              ? QueueSubmissionStatus.partial
+              : result.finalStatus == null
+              ? QueueSubmissionStatus.pending
+              : QueueSubmissionStatus.error,
+          smallStatusMessage: result.statusLabel,
+        ),
+      );
+      await controller?.refreshPendingCount();
+    } finally {
+      await releaseCachedSaveLock(owner: lockOwner);
+    }
+    return;
+
+    /* Legacy trigger-count display. Detailed results above now drive the UI.
     controller?.registerReceivedQueueId(queueId);
     controller?.updateQueueItem(
       queueId,
@@ -7834,6 +8421,7 @@ class OfflineDbModule {
     } catch (e, st) {
       LogService.writeLog(message: "$tag EXCEPTION: $e\n$st");
     }
+    */
   }
 
   /// Mirrors _handleQueuePartialOrError / _handleQueueFullSuccess but
@@ -8018,6 +8606,9 @@ class OfflineDbModule {
             .where((id) => id != -1)
             .toList();
 
+    final eligible = (await OfflineNotifications.eligibleIds(queueId)).toSet();
+    axmRecIds.removeWhere((id) => !eligible.contains(id));
+
     LogService.writeLog(
       message:
           "$tag [FULL_SUCCESS] queue_id=$queueId resolved "
@@ -8029,6 +8620,7 @@ class OfflineDbModule {
         axmRecIds,
         OfflineDBConstants.RECORD_STATUS_SUCCESS,
         "success",
+        queueId: queueId,
       );
       LogService.writeLog(
         message:
@@ -8117,6 +8709,8 @@ class OfflineDbModule {
     LogService.writeLog(message: "$tag [FULL_SUCCESS] DONE queue_id=$queueId");
   }
 
+  // Retained for comparison; all current record paths reuse _resolveSingleQueueFromRow.
+  // ignore: unused_element
   static Future<void> _handleQueuePartialOrError({
     required String queueId,
     required String status,
@@ -8586,8 +9180,9 @@ class OfflineDbModule {
   static Future<void> _updateStatusAndResponse(
     int recId,
     int status,
-    String response,
-  ) async {
+    String response, {
+    String? queueId,
+  }) async {
     const String tag = "[UPDATE_STATUS_RESPONSE]";
     try {
       final int affected = await _database.update(
@@ -8596,8 +9191,9 @@ class OfflineDbModule {
           OfflineDBConstants.COL_STATUS: status,
           OfflineDBConstants.COL_RESPONSE: response,
         },
-        where: '${OfflineDBConstants.COL_ID} = ?',
-        whereArgs: [recId],
+        where:
+            '${OfflineDBConstants.COL_ID} = ?${queueId == null ? '' : " AND (current_queue_id = ? OR (current_queue_id = '' AND record_version = 0))"}',
+        whereArgs: [recId, if (queueId != null) queueId],
       );
 
       LogService.writeLog(
@@ -8623,8 +9219,9 @@ class OfflineDbModule {
   static Future<int> _batchUpdateStatusAndResponse(
     List<int> recIds,
     int status,
-    String response,
-  ) async {
+    String response, {
+    String? queueId,
+  }) async {
     const String tag = "[BATCH_UPDATE_STATUS_RESPONSE]";
     if (recIds.isEmpty) {
       LogService.writeLog(message: "$tag Called with empty recIds — no-op.");
@@ -8639,8 +9236,9 @@ class OfflineDbModule {
           OfflineDBConstants.COL_STATUS: status,
           OfflineDBConstants.COL_RESPONSE: response,
         },
-        where: '${OfflineDBConstants.COL_ID} IN ($placeholders)',
-        whereArgs: recIds,
+        where:
+            '${OfflineDBConstants.COL_ID} IN ($placeholders)${queueId == null ? '' : " AND (current_queue_id = ? OR (current_queue_id = '' AND record_version = 0))"}',
+        whereArgs: [...recIds, if (queueId != null) queueId],
       );
 
       LogService.writeLog(
@@ -9311,6 +9909,16 @@ class OfflineDbModule {
       final response = await _backgroundPushToQueue(requestBody: requestBody);
 
       if (response.authFailed) {
+        await OfflineNotifications.add(
+          username: username,
+          projectName: projectName,
+          eventKey: '${payload.queueId}:push-failed',
+          type: 'batch_error',
+          queueId: payload.queueId,
+          title: 'Batch could not be sent',
+          message:
+              'Your session expired. Sign in again to send these offline records.',
+        );
         // Release the claim so these records are retried once the user
         // re-authenticates, instead of being stuck as QUEUED forever.
         await _batchUpdateStatus(
@@ -9331,6 +9939,16 @@ class OfflineDbModule {
       }
 
       if (!response.success) {
+        await OfflineNotifications.add(
+          username: username,
+          projectName: projectName,
+          eventKey: '${payload.queueId}:push-failed',
+          type: 'batch_error',
+          queueId: payload.queueId,
+          title: 'Batch could not be sent',
+          message:
+              'Your records are kept offline. Please try sending them again.',
+        );
         // Same here — push failed, release the claim.
         await _batchUpdateStatus(
           payload.axmRecIds,

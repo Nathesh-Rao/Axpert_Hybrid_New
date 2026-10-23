@@ -230,10 +230,8 @@ class ProjectController extends GetxController
 
   void onEditProjectClick(ProjectModel project) {
     editingProject.value = project;
-    var trimmedProjectUrl = project.url.replaceAll("https://", "");
-    var trimmedArmUrl = project.armurl.replaceAll("https://", "");
-    webUrlCtrl.text = trimmedProjectUrl;
-    armUrlCtrl.text = trimmedArmUrl;
+    webUrlCtrl.text = project.url;
+    armUrlCtrl.text = project.armurl;
     connectionNameCtrl.text = project.schemaName;
     connectionCaptionCtrl.text = project.caption;
 
@@ -585,6 +583,7 @@ class ProjectController extends GetxController
   }
 
   void onSaveUrlDetails(GlobalKey<FormState> formKey) async {
+    if (isProjectSaving.value) return;
     if (!validate(formKey)) {
       HapticManager.warning();
       return;
@@ -593,6 +592,7 @@ class ProjectController extends GetxController
     final rawUrl = webUrlCtrl.text.trim();
     final rawArmUrl = armUrlCtrl.text.trim();
     final name = connectionNameCtrl.text.trim();
+    final caption = connectionCaptionCtrl.text.trim();
 
     // Auto-add https if missing
     String url = rawUrl;
@@ -634,14 +634,12 @@ class ProjectController extends GetxController
       url: url,
       armurl: armurl,
       schemaName: name,
-      caption: name,
+      caption: caption,
+      excludeId: editingProject.value?.id,
     );
 
     if (dReason != DuplicateReason.none) {
-      currentTileState.value = ProjectAddingState.defaultState;
       _showErrorSnackbar(_getDuplicateReason(dReason));
-      // editingProject.value = null;
-      cancelEdit();
       projectSavingStopped();
       return;
     }
@@ -684,7 +682,7 @@ class ProjectController extends GetxController
           url: url,
           armurl: armurl,
           schemaName: name,
-          caption: connectionCaptionCtrl.text.trim(),
+          caption: caption,
         ),
       );
     } else {
@@ -696,7 +694,7 @@ class ProjectController extends GetxController
           url: url,
           armurl: armurl,
           schemaName: name,
-          caption: connectionCaptionCtrl.text.trim(),
+          caption: caption,
         ),
       );
     }

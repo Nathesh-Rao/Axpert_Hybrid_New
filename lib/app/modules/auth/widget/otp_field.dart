@@ -1,10 +1,9 @@
+import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
-
-import '../../../core/common.dart';
-import 'login_suffix_widget.dart';
+import '../../../widgets/connection_style.dart';
 
 class WidgetOtpTextField extends StatelessWidget {
- const WidgetOtpTextField({
+  const WidgetOtpTextField({
     super.key,
     required this.label,
     this.isLoading = false,
@@ -13,9 +12,7 @@ class WidgetOtpTextField extends StatelessWidget {
     this.controller,
     this.errorText = '',
     this.onCompleted,
-
   });
-
   final String label;
   final bool isLoading;
   final double width;
@@ -25,122 +22,99 @@ class WidgetOtpTextField extends StatelessWidget {
   final VoidCallback? onCompleted;
 
   @override
-  Widget build(BuildContext context) {
-    var fieldSize = MediaQuery.of(context).size.width * 0.112;
-
-    final PinTheme defaultTheme = PinTheme(
-      margin: EdgeInsets.symmetric(horizontal: 7),
-      width: fieldSize,
-      height: fieldSize,
-      textStyle: GoogleFonts.poppins(fontSize: 20, color: Colors.black),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(8),
-      ),
-    );
-
-    final PinTheme errorTheme = PinTheme(
-      width: 56,
-      height: 56,
-      textStyle: GoogleFonts.poppins(fontSize: 20, color: Colors.black),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.red),
-        borderRadius: BorderRadius.circular(8),
-      ),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.only(left: 25, right: 25, top: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
         children: [
-          Row(
-            children: [
-              isLoading
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        WidgetRotatingSuffixField(
-                          width: 15,
-                        ),
-                        SizedBox(
-                          width: 10,
-                        ),
-                      ],
-                    )
-                  : SizedBox.shrink(),
-              Text(
-                label,
-                style: GoogleFonts.manrope(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
+          if (isLoading) ...[
+            const SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: ConnectionStyle.navy,
               ),
-            ],
+            ),
+            const SizedBox(width: 10),
+          ],
+          Text(
+            label,
+            style: ConnectionStyle.text(
+              context,
+              12,
+              weight: FontWeight.w600,
+              color: ConnectionStyle.muted(context),
+            ),
           ),
-          SizedBox(height: 10),
-          // OTPTextField(
-          //   length: 6,
-          //   width: MediaQuery.of(context).size.width - 50,
-          //   fieldWidth: MediaQuery.of(context).size.width * 0.116,
-          //   textFieldAlignment: MainAxisAlignment.spaceBetween,
-          //   fieldStyle: FieldStyle.box,
-          //   onCompleted: (pin) {
-          //     print("Completed: " + pin);
-          //   },
-          // ),
-          Center(
+        ],
+      ),
+      const SizedBox(height: 8),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = 5.0;
+          final fieldWidth =
+              ((constraints.maxWidth - gap * (otpLength - 1)) / otpLength)
+                  .clamp(1.0, 56.0);
+          final danger = ConnectionStyle.dark(context)
+              ? const Color(0xffFF7A8C)
+              : const Color(0xffC7364B);
+          PinTheme pinTheme(
+            Color border, {
+            Color? fill,
+            double borderWidth = 1.5,
+          }) => PinTheme(
+            width: fieldWidth,
+            height: 52,
+            textStyle: ConnectionStyle.text(
+              context,
+              19,
+              weight: FontWeight.w700,
+            ),
+            decoration: BoxDecoration(
+              color: fill ?? ConnectionStyle.field(context),
+              border: Border.all(color: border, width: borderWidth),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          );
+          return Center(
             child: Pinput(
               length: otpLength,
               controller: controller,
-              defaultPinTheme: errorText.isNotEmpty ? errorTheme : defaultTheme,
-             /* validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'PIN is required';
-                } else if (value.length < 4) {
-                  return 'PIN must be 4 digits';
-                }
-                return null;
-              },*/
-              // errorText: errorText.isEmpty ? null : errorText,
-              //errorTextStyle: TextStyle(color: Colors.red, fontSize: 12),
-              focusedPinTheme: PinTheme(
-                margin: EdgeInsets.symmetric(horizontal: 7),
-                width: fieldSize,
-                height: fieldSize,
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.darkBlue, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              separatorBuilder: (_) => const SizedBox(width: gap),
+              defaultPinTheme: pinTheme(
+                errorText.isNotEmpty ? danger : ConnectionStyle.line(context),
               ),
-              submittedPinTheme: PinTheme(
-                margin: EdgeInsets.symmetric(horizontal: 7),
-                width: fieldSize,
-                height: fieldSize,
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.darkBlue, width: 2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              focusedPinTheme: pinTheme(
+                errorText.isNotEmpty ? danger : ConnectionStyle.navy,
+                fill: ConnectionStyle.card(context),
+                borderWidth: 2,
               ),
-
-              onCompleted: (pin) => onCompleted!(),
+              submittedPinTheme: pinTheme(
+                errorText.isNotEmpty ? danger : ConnectionStyle.navy,
+              ),
+              onCompleted: (_) => onCompleted?.call(),
+            ),
+          );
+        },
+      ),
+      Padding(
+        padding: const EdgeInsets.only(left: 4, top: 6),
+        child: Semantics(
+          liveRegion: true,
+          child: Text(
+            errorText,
+            style: ConnectionStyle.text(
+              context,
+              12,
+              weight: FontWeight.w600,
+              color: ConnectionStyle.dark(context)
+                  ? const Color(0xffFF7A8C)
+                  : const Color(0xffC7364B),
             ),
           ),
-          errorText.isNotEmpty
-              ? Padding(
-                  padding: const EdgeInsets.only(left: 50, top: 10),
-                  child: Text(
-                    errorText,
-                    style:  GoogleFonts.poppins(color: Colors.red),
-                  ),
-                )
-              : const SizedBox.shrink(),
-          /* Text(
-            errorText,
-            style: TextStyle(color: Colors.red),
-          )*/
-        ],
+        ),
       ),
-    );
-  }
+    ],
+  );
 }

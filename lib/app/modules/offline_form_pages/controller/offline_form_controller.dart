@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
+import 'dart:math' show max;
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
@@ -28,9 +30,17 @@ import '../models/models.dart';
 import '../models/queue_resolve_result_model.dart';
 import '../widgets/all_records_done_dialog.dart';
 import '../widgets/cached_refresh_dialog.dart';
-import '../widgets/cached_save_dialog.dart';
+// import '../widgets/cached_save_dialog.dart'; // Previous modal retained below.
 import '../widgets/session_validation__dialog.dart';
 import '../widgets/widgets.dart';
+import '../widgets/refresh_selection_dialog.dart';
+import '../models/offline_notification_model.dart';
+import '../models/offline_record_correction.dart';
+import '../models/offline_update_messages.dart';
+import '../models/offline_refresh_report.dart';
+import '../models/offline_send_banner_state.dart';
+import '../models/offline_batch_banner_updates.dart';
+import '../pages/offline_notifications_page.dart';
 
 class OfflineFormController extends GetxController {
   late OfflineFormPageModel page;
@@ -50,12 +60,167 @@ class OfflineFormController extends GetxController {
   // ================= OFFLINE DASHBOARD STATE =================
 
   var isConnected = false.obs;
+  final unreadOfflineNotifications = 0.obs;
+  Timer? _notificationTimer;
+  bool _readingNotificationCount = false;
+  bool _openingNotificationRecord = false;
+  int? editingRecordId;
+  int? _editingVersion;
+  String? _editingUsername, _editingProject;
+  Map<String, dynamic>? _originalRecordPayload;
+  final Map<String, String> _loadedFieldValues = {};
+  final correctionMessage = ''.obs;
+  String? correctionField;
+  bool get isCorrectingRecord => editingRecordId != null;
+
+  Future<void> refreshNotificationCount() async {
+    if (_readingNotificationCount) return;
+    _readingNotificationCount = true;
+    try {
+      unreadOfflineNotifications.value =
+          await OfflineNotifications.unreadCount();
+      await refreshBatchResultBanner();
+      if (isConnected.value)
+        unawaited(OfflineNotifications.retryTriggeredResults());
+    } catch (e) {
+      LogService.writeLog(
+        message: '[OFFLINE_NOTIFICATION] Badge refresh failed: $e',
+      );
+    } finally {
+      _readingNotificationCount = false;
+    }
+  }
+
+  Future<void> openOfflineNotifications() async {
+    await Get.to(() => OfflineNotificationsPage(formController: this));
+    await refreshNotificationCount();
+  }
+
+  Future<void> openNotificationRecord(
+    OfflineNotificationModel notification,
+  ) async {
+    if (notification.recordId == null ||
+        _openingNotificationRecord ||
+        isLoading.value ||
+        isFormPreparing.value)
+      return;
+    _openingNotificationRecord = true;
+    try {
+      final record = await OfflineNotifications.loadRecord(
+        notification.recordId!,
+      );
+      final scope = await OfflineNotifications.store();
+      if (record == null ||
+          scope?.username != notification.username ||
+          scope?.projectName != notification.projectName) {
+        throw StateError(
+          'This record is no longer available in the current project.',
+        );
+      }
+      if (record['record_version'] != notification.recordVersion) {
+        throw StateError(
+          'This record has already been updated. Open its latest notification if it fails again.',
+        );
+      }
+      if (record['status'] == OfflineDBConstants.RECORD_STATUS_QUEUED) {
+        throw StateError(
+          'This record is being processed. Please check submission status first.',
+        );
+      }
+      if (record['status'] == OfflineDBConstants.RECORD_STATUS_SUCCESS) {
+        throw StateError(
+          'This record has already been submitted successfully.',
+        );
+      }
+      if ((record['current_queue_id'] as String? ?? '').isNotEmpty &&
+          record['current_queue_id'] != notification.queueId) {
+        throw StateError(
+          'A newer submission exists for this record. Open its latest notification.',
+        );
+      }
+      final payload = record['payload'] as Map<String, dynamic>;
+      final pages = await OfflineDbModule.getOfflinePages();
+      final matches = pages
+          .where((p) => p['transid'] == payload['transid'])
+          .toList();
+      if (matches.isEmpty)
+        throw StateError(
+          'This form is not available offline. Refresh the form and try again.',
+        );
+      await prepareForm(matches.first);
+      editingRecordId = notification.recordId;
+      _editingVersion = record['record_version'] as int? ?? 0;
+      _editingUsername = notification.username;
+      _editingProject = notification.projectName;
+      _originalRecordPayload =
+          jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
+      final values = payload['submitdata']?['dc1']?['row1'] as Map? ?? {};
+      // Hydrate controllers without dropping additional DCs, rows or attachments.
+      for (final field in page.fields) {
+        final stored = values[field.fldName];
+        final text = stored == null
+            ? ''
+            : stored is String
+            ? stored
+            : stored.toString();
+        textCtrls[field.fldName]?.text = text;
+        dropdownCtrls[field.fldName]?.value = text;
+        field.value = stored ?? '';
+        _loadedFieldValues[field.fldName] =
+            dropdownCtrls[field.fldName]?.value ??
+            textCtrls[field.fldName]?.text.trim() ??
+            text.trim();
+      }
+      correctionMessage.value =
+          record['response']?.toString().isNotEmpty == true
+          ? record['response'].toString()
+          : notification.message;
+      correctionField = matchOfflineErrorField(
+        correctionMessage.value,
+        (schema['fields'] as List)
+            .map((f) => Map<String, dynamic>.from(f))
+            .toList(),
+      );
+      if (correctionField != null)
+        errors[correctionField!] = correctionMessage.value;
+      LogService.writeLog(
+        message:
+            '[OFFLINE_NOTIFICATION] Open record=${notification.recordId} form=${page.transId} field=$correctionField',
+      );
+      update();
+      await Get.toNamed(Routes.OFFLINE_FORM_PAGE);
+    } catch (e) {
+      LogService.writeLog(
+        message: '[OFFLINE_NOTIFICATION] Open record failed: $e',
+      );
+      Get.snackbar(
+        'Record unavailable',
+        e.toString().replaceFirst('Bad state: ', ''),
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      _openingNotificationRecord = false;
+    }
+  }
+
   @override
   void onInit() {
     super.onInit();
     refreshPendingCount();
     listenInternetState();
     resetForm();
+    refreshNotificationCount();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => refreshNotificationCount(),
+    );
+  }
+
+  @override
+  void onClose() {
+    _notificationTimer?.cancel();
+    _sendBannerTimer?.cancel();
+    super.onClose();
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -80,7 +245,16 @@ class OfflineFormController extends GetxController {
 
   ///////////////////////////////////////
 
-  Future<void> prepareForm(Map<String, dynamic> newSchema) async {
+  Future<void> prepareForm(
+    Map<String, dynamic> newSchema, {
+    bool reuseControllers = false,
+  }) async {
+    editingRecordId = null;
+    _editingVersion = null;
+    _originalRecordPayload = null;
+    _loadedFieldValues.clear();
+    correctionMessage.value = '';
+    correctionField = null;
     isFormPreparing.value = true;
     page = OfflineFormPageModel.fromJson(newSchema);
     schema = newSchema;
@@ -91,21 +265,29 @@ class OfflineFormController extends GetxController {
     //   duration: const Duration(milliseconds: 500),
     //   curve: Curves.easeInOut,
     // );
-    // 2. destroy old controllers
-    for (final c in textCtrls.values) {
-      c.dispose();
+    // 2. Opening a different form replaces its controllers. Resetting the
+    // current mounted form must keep both text and dropdown controller objects
+    // alive: reactive field builders may run before this method finishes.
+    if (!reuseControllers) {
+      for (final c in textCtrls.values) {
+        c.dispose();
+      }
+      textCtrls.clear();
+      dropdownCtrls.clear();
     }
-    textCtrls.clear();
-    dropdownCtrls.clear();
 
-    // 3. rebuild from schema
-    _buildControllersFromSchema();
+    // 3. Restore defaults using the existing schema builder. Reuse is only
+    // requested for a new entry on this same form, never for a schema switch.
+    _buildControllersFromSchema(reuseControllers: reuseControllers);
 
-    // 4. load datasources
-    await loadDatasources();
+    // 4. A new entry keeps the current offline lookup data and subscriptions.
+    // Clearing/reloading it mid-reset can temporarily invalidate dropdowns.
+    if (!reuseControllers) {
+      await loadDatasources();
 
-    // 5. attach business rules
-    _attachBusinessListeners();
+      // 5. Attach business rules only to newly created controllers.
+      _attachBusinessListeners();
+    }
 
     // 6. scroll to top
     if (scrollCtrl.hasClients) {
@@ -164,7 +346,7 @@ class OfflineFormController extends GetxController {
     }
   }
 
-  void _buildControllersFromSchema() {
+  void _buildControllersFromSchema({bool reuseControllers = false}) {
     final List fields = schema["fields"];
 
     for (final f in fields) {
@@ -174,7 +356,11 @@ class OfflineFormController extends GetxController {
       final bool isUpper = rawType.endsWith("_upper");
       final String type = isUpper ? rawType.replaceAll("_upper", "") : rawType;
       if (type == "dd") {
-        dropdownCtrls[name] = "".obs;
+        if (!reuseControllers || !dropdownCtrls.containsKey(name)) {
+          dropdownCtrls[name] = "".obs;
+        } else {
+          dropdownCtrls[name]!.value = '';
+        }
 
         if (defValue.isNotEmpty) {
           List<String> validOptions = getDropdownOptions(name);
@@ -184,9 +370,12 @@ class OfflineFormController extends GetxController {
           }
         }
       } else {
-        final ctrl = TextEditingController(text: defValue);
+        final existing = reuseControllers ? textCtrls[name] : null;
+        final ctrl = existing ?? TextEditingController(text: defValue);
+        if (existing != null) ctrl.text = defValue;
 
-        if (isUpper) {
+        // Reused controllers already have their uppercase/business listeners.
+        if (isUpper && existing == null) {
           ctrl.addListener(() {
             final String text = ctrl.text;
             final String formatted = text.toUpperCase();
@@ -322,35 +511,83 @@ class OfflineFormController extends GetxController {
 
   Future<void> onFormSubmit() async {
     if (isLoading.value) return;
+    isLoading.value = true;
 
-    if (!await validateForm()) {
-      Get.snackbar(
-        "Missing Fields",
-        "Please fill all required fields before proceeding.",
-        backgroundColor: AppColors.accentRed,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(12),
-        duration: const Duration(seconds: 2),
+    try {
+      if (!await validateForm()) {
+        Get.snackbar(
+          "Missing Fields",
+          "Please fill all required fields before proceeding.",
+          backgroundColor: AppColors.accentRed,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(12),
+          duration: const Duration(seconds: 2),
+        );
+        return;
+      }
+      final Map<String, dynamic> mainPayload =
+          generateSubmitPayloadCachedSave();
+      log(mainPayload.toString(), name: "mainpayload");
+      final int mainRecId = await OfflineDbModule.savePayloadForQueue(
+        payload: mainPayload,
+        existingRecordId: editingRecordId,
+        expectedVersion: _editingVersion,
+        expectedUsername: _editingUsername,
+        expectedProjectName: _editingProject,
       );
-      return;
-    }
-    final Map<String, dynamic> mainPayload = generateSubmitPayloadCachedSave();
-    log(mainPayload.toString(), name: "mainpayload");
-    final int mainRecId = await OfflineDbModule.savePayloadForQueue(
-      payload: mainPayload,
-    );
 
-    if (mainRecId == -1) {
-      throw Exception("Failed to save main form payload to queue.");
-    }
-    // await startNewTransaction();
-    isLoading.value = false;
-    errors.clear();
-    // submitStatus.value = "";
-    Get.back();
+      if (mainRecId == -1) {
+        throw Exception("Failed to save main form payload to queue.");
+      }
+      errors.clear();
+      if (isCorrectingRecord) {
+        // A notification correction updates the existing record and returns
+        // to its results page, preserving that separate workflow.
+        Get.back();
+      } else {
+        // Previously Get.back() closed every newly saved offline form.
+        // Keep this route open and reuse the schema/default/lookup setup for
+        // the next record only after the current record is safely stored.
+        await startNewTransaction();
+      }
 
-    await refreshPendingCount();
+      await refreshPendingCount();
+      if (isCorrectingRecord) {
+        // Show confirmation on the destination page after the form closes.
+        final context = Get.context;
+        if (context != null) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(
+              content: Text('Record updated. Your changes are ready for sync.'),
+            ),
+          );
+        }
+      } else {
+        final context = Get.context;
+        if (context != null) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(
+              content: Text('Record saved offline. Ready for a new entry.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      LogService.writeLog(
+        message: '[OFFLINE_FORM_SAVE] Failed record=$editingRecordId: $e',
+      );
+      Get.snackbar(
+        'Could not save',
+        isCorrectingRecord
+            ? 'The record may be syncing or has changed. Please check submission status and reopen it before saving again.'
+            : 'Your record could not be saved. Please try again.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   Future<void> startNewTransaction() async {
@@ -358,32 +595,14 @@ class OfflineFormController extends GetxController {
     try {
       isFormPreparing.value = true;
 
-      // Clear text controllers
-      for (final controller in textCtrls.values) {
-        controller.clear();
-      }
+      // Release keyboard focus and clear only this entry's attachment list.
+      // Saved files/queued records remain untouched.
+      FocusManager.instance.primaryFocus?.unfocus();
+      attachments.clear();
 
-      // Clear dropdown values
-      dropdownCtrls.clear();
-
-      // Clear form errors
-      errors.clear();
-
-      // Clear sample/grid data
-
-      // Clear runtime JSONs
-      // mainFormJson.clear();
-      dc1SubmitFormJson.clear();
-
-      // Dispose old controllers
-      for (final controller in textCtrls.values) {
-        controller.dispose();
-      }
-
-      textCtrls.clear();
-
-      // Rebuild everything from schema
-      await prepareForm(schema);
+      // Keep mounted field controllers and lookup subscriptions alive while
+      // restoring defaults. Normal form opening still builds fresh objects.
+      await prepareForm(schema, reuseControllers: true);
 
       // Scroll to top
       if (scrollCtrl.hasClients) {
@@ -399,6 +618,24 @@ class OfflineFormController extends GetxController {
   }
 
   Map<String, dynamic> generateSubmitPayloadCachedSave() {
+    if (isCorrectingRecord && _originalRecordPayload != null) {
+      // Merge changed controls into the original payload instead of rebuilding
+      // it; unknown fields, attachment objects and additional rows stay intact.
+      final payload =
+          jsonDecode(jsonEncode(_originalRecordPayload))
+              as Map<String, dynamic>;
+      final row = payload['submitdata']['dc1']['row1'] as Map<String, dynamic>;
+      for (final field in page.fields) {
+        final value =
+            dropdownCtrls[field.fldName]?.value ??
+            textCtrls[field.fldName]?.text.trim() ??
+            '';
+        if (value != _loadedFieldValues[field.fldName])
+          row[field.fldName] = value;
+      }
+      payload['axm_recid'] = editingRecordId.toString();
+      return payload;
+    }
     final Map<String, dynamic> dc1Data = {};
     final List fields = schema["fields"];
 
@@ -438,11 +675,22 @@ class OfflineFormController extends GetxController {
   Future<void> refreshPendingQueuesCount() async {
     try {
       var rows = await OfflineDbModule.getPendigQueuesToRefresh();
-      pendingQueuesCount.value = rows.length;
+      pendingQueuesCount.value = formSubmissionQueues(rows).length;
     } catch (e) {
       print("Error fetching pending count: $e");
     }
   }
+
+  /// Presentation filter only. Shared DB queries/resolvers must continue to
+  /// include audit queues so manual/background processing remains unchanged.
+  List<Map<String, dynamic>> formSubmissionQueues(
+    Iterable<Map<String, dynamic>> rows,
+  ) => rows.where((row) {
+    // Older queue rows without a source belong to the original form queue.
+    final source = row[OfflineDBConstants.COL_SOURCE_TABLE]?.toString() ?? '';
+    return source.isEmpty ||
+        source == OfflineDBConstants.TABLE_PENDING_REQUESTS;
+  }).toList();
 
   void listenInternetState() async {
     final InternetConnectivity net = Get.find<InternetConnectivity>();
@@ -1385,68 +1633,359 @@ class OfflineFormController extends GetxController {
     );
   }
 
-  Future<void> actionSyncAll() async {
+  // Open a picker; refresh work stays in the existing parameterized action.
+  Future<void> actionRefresh() async {
+    final forms = allPages.where((page) => page.pageType == 'form').toList();
+    final selected = await Get.dialog<String>(
+      RefreshSelectionDialog(forms: forms),
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+    );
+    if (selected == null) return;
+    if (selected.isEmpty) {
+      await actionSyncAll();
+    } else {
+      final page = forms.firstWhere((page) => page.transId == selected);
+      await actionSyncAll(transId: page.transId, caption: page.caption);
+    }
+  }
+
+  Future<void> actionSyncAll({String? transId, String? caption}) async {
     const tag = "[OFFLINE_ACTION_SYNC_ALL]";
+    final notifications = await OfflineNotifications.beginUpdate();
+    final refreshCaption = transId == null ? 'Refresh All' : caption ?? transId;
+    OfflineRefreshReport? refreshReport;
+    OfflineRefreshReport reportForPages(
+      List<Map<String, dynamic>> pages, {
+      required bool downloaded,
+    }) => OfflineRefreshReport(
+      pages
+          .where((page) => (page['page_type'] ?? 'form') == 'form')
+          .map(
+            (page) => OfflineRefreshFormResult(
+              transId: page['transid']?.toString() ?? '',
+              caption:
+                  page['caption']?.toString() ??
+                  page['transid']?.toString() ??
+                  'Offline form',
+              formUpdated: downloaded,
+            ),
+          )
+          .toList(),
+    );
+    OfflineRefreshFormResult? formResult(String formId) {
+      for (final form in refreshReport?.forms ?? <OfflineRefreshFormResult>[]) {
+        if (form.transId == formId) return form;
+      }
+      return null;
+    }
+
+    void recordFormDownloadFailure() {
+      for (final form in refreshReport?.forms ?? <OfflineRefreshFormResult>[]) {
+        if (!form.formUpdated) {
+          form.formError =
+              '${form.caption} could not be downloaded. Please try refreshing this form again.';
+        }
+      }
+    }
+
+    Future<void> notice(
+      String event,
+      String type,
+      String title,
+      String message, {
+      int updated = 0,
+      int failed = 0,
+    }) async {
+      await notifications?.notify(
+        event: event,
+        type: type,
+        title: title,
+        message: message,
+        caption: refreshCaption,
+        transId: transId ?? '',
+        successCount: updated,
+        failedCount: failed,
+        refreshReport: refreshReport,
+      );
+    }
 
     if (!await _isInternetAvailable()) {
+      await notice(
+        'start',
+        'refresh_error',
+        'Refresh could not start',
+        'No internet connection. Connect to the internet and try Refresh again.',
+      );
       _showNeedInternetDialog();
       return;
     }
 
     final ok = await _confirm(
-      title: "Full Sync",
-      message:
-          "This will sync pending uploads, forms, and datasources.\n\nContinue?",
-      okText: "Start Sync",
+      title: transId == null ? "Full Sync" : "Refresh $caption",
+      message: transId == null
+          ? "This will sync pending uploads, forms, and datasources.\n\nContinue?"
+          : "Update this form and its lookup data?",
+      okText: transId == null ? "Start Sync" : "Refresh",
     );
     if (!ok) return;
 
-    final progressModel = SyncProgressModel(initialTitle: "Full Sync");
-
-    progressModel.init(total: 3, msg: "Initializing...");
-    Get.dialog(
-      SyncProgressDialog(progressModel: progressModel),
-      barrierDismissible: false,
-    );
-
-    try {
-      progressModel.updateMessage("Step 1/3: Uploading pending data...");
-
-      final pushResult = await OfflineDbModule.processPendingQueue(
-        isInternetAvailable: true,
+    // Coordinate selected refresh with background sync without blocking forms.
+    final owner = 'form-refresh-${DateTime.now().microsecondsSinceEpoch}';
+    bool lockAcquired = false;
+    if (transId != null) {
+      lockAcquired = await OfflineDbModule.tryAcquireCachedSaveLock(
+        owner: owner,
       );
-      LogService.writeLog(message: "$tag[STEP_1] $pushResult");
-      progressModel.increment();
-      progressModel.updateMessage("Step 2/3: Checking for new forms...");
-      final pages = await OfflineDbModule.fetchAndStoreOfflinePages();
-      if (pages.isEmpty) {
-        progressModel.increment(isSuccess: false);
-        progressModel.updateMessage("Sync Failed: NO OFFLINE PAGES");
-        isLoading.value = false;
-        progressModel.complete();
+      if (!lockAcquired) {
+        await notice(
+          'start',
+          'refresh_error',
+          'Refresh is temporarily unavailable',
+          'Another sync is running. Please try refreshing $refreshCaption again when it finishes.',
+        );
+        Get.snackbar(
+          'Sync Busy',
+          'Another sync is running. Please try again shortly.',
+        );
         return;
       }
-      await getAllPages(); // Refresh the list in memory
+    }
+    final progressModel = SyncProgressModel(
+      initialTitle: transId == null ? "Full Sync" : "Refreshing $caption",
+    );
+    var stage = 'initializing';
+    var lookupFailures = 0;
+
+    try {
+      progressModel.init(
+        // Upload (Refresh All only) and form download are known up front.
+        // Each actual per-form bulk lookup request adds another operation.
+        total: transId == null ? 2 : 1,
+        msg: "Initializing...",
+      );
+      Get.dialog(
+        SyncProgressDialog(progressModel: progressModel),
+        barrierDismissible: false,
+      );
+      // Both refresh paths must validate before uploading or changing the cache.
+      {
+        progressModel.updateMessage('Checking your session...');
+        if (!await OfflineDbModule.ensureValidSession()) {
+          await notice(
+            'session',
+            'refresh_error',
+            'Sign in to refresh offline data',
+            'Your session could not be renewed. Sign in again, then try Refresh. Your cached data has been kept.',
+          );
+          progressModel.increment(isSuccess: false);
+          progressModel.isSessionError.value = true;
+          progressModel.completeWithError(
+            errorMsg:
+                'Your session could not be renewed. Please log in again '
+                'and retry refreshing ${caption ?? 'offline data'}. '
+                'Your cached data has been kept.',
+            statuscode: 'SESSION_INVALID',
+          );
+          return;
+        }
+      }
+      progressModel.updateMessage(
+        transId == null
+            ? "Uploading pending data..."
+            : "Preparing to refresh $caption...",
+      );
+
+      final uploadProgress = SyncProgressModel();
+      stage = 'uploads';
+      final pushResult = transId == null
+          ? await OfflineDbModule.processPendingQueue(
+              isInternetAvailable: true,
+              progress: uploadProgress,
+            )
+          : 'Not requested';
+      LogService.writeLog(message: "$tag[STEP_1] $pushResult");
+      // Pending uploads remain one operation, with record counts in details.
+      if (transId == null) {
+        progressModel.increment(
+          isSuccess:
+              uploadProgress.failureCount.value == 0 &&
+              !uploadProgress.isCompletedWithError.value,
+        );
+      }
+      progressModel.updateMessage(
+        transId == null
+            ? "Checking for new forms..."
+            : "Refreshing $caption...",
+      );
+      stage = 'forms';
+      // Read the existing form names only for a failed-download report. The
+      // server's returned list remains authoritative on a successful download.
+      try {
+        final cachedPages = await OfflineDbModule.getOfflinePages();
+        refreshReport = reportForPages(
+          cachedPages
+              .where((page) => transId == null || page['transid'] == transId)
+              .toList(),
+          downloaded: false,
+        );
+      } catch (e) {
+        LogService.writeLog(
+          message: '$tag Could not collect notification form names: $e',
+        );
+      }
+      if (transId != null && (refreshReport?.forms.isEmpty ?? true)) {
+        refreshReport = OfflineRefreshReport([
+          OfflineRefreshFormResult(transId: transId, caption: refreshCaption),
+        ]);
+      }
+      final pages = await OfflineDbModule.fetchAndStoreOfflinePages(
+        transId: transId,
+      );
+      if (pages.isEmpty) {
+        recordFormDownloadFailure();
+        await notice(
+          'forms',
+          'refresh_error',
+          transId == null
+              ? 'Offline forms could not be downloaded'
+              : '$refreshCaption could not be downloaded',
+          'The requested offline forms could not be downloaded. Please try Refresh again.',
+        );
+        progressModel.increment(isSuccess: false);
+        progressModel.completeWithError(
+          errorMsg: 'Could not download the requested offline forms.',
+          statuscode: 'FORM_REFRESH_FAILED',
+        );
+        return;
+      }
+      refreshReport = reportForPages(pages, downloaded: true);
+      stage = 'form-list';
+      if (transId == null) {
+        await getAllPages(); // Preserve existing full-sync loading behavior.
+      } else {
+        // Update list models without changing the form-loading state.
+        allRawPages = await OfflineDbModule.getOfflinePages();
+        allPages.value = allRawPages
+            .map((page) => OfflineFormPageModel.fromJson(page))
+            .where((page) => page.visible)
+            .toList();
+      }
       LogService.writeLog(
         message: "$tag[STEP_2] Fetched ${pages.length} forms",
       );
       progressModel.increment();
-      progressModel.updateMessage("Step 3/3: Updating datasources...");
+      progressModel.updateMessage("Updating lookup data...");
+      final lookupProgress = SyncProgressModel();
+      stage = 'lookups';
       await OfflineDbModule.refreshAllDatasourcesFromDownloadedPages(
         isrefetching: true,
+        transId: transId,
+        progressModel: lookupProgress,
+        operationProgress: progressModel,
+        onLookupFailure: (formId, datasource, error) async {
+          lookupFailures++;
+          final matches = pages.where((page) => page['transid'] == formId);
+          final form = matches.isEmpty ? <String, dynamic>{} : matches.first;
+          final formCaption = form['caption']?.toString() ?? formId;
+          final lookupCaption = offlineLookupCaption(form, datasource);
+          LogService.writeLog(
+            message:
+                '$tag Lookup failure form=$formId datasource=$datasource: $error',
+          );
+          // Keep each exact error in this refresh's report, not in a
+          // separate notification. Submission-error notifications are untouched.
+          final result = formResult(formId);
+          if (result != null &&
+              !result.lookupErrors.any(
+                (item) => item.datasource == datasource,
+              )) {
+            result.lookupErrors.add(
+              OfflineLookupError(
+                datasource: datasource,
+                caption: lookupCaption,
+                message: friendlyLookupFailure(
+                  lookup: lookupCaption,
+                  form: formCaption,
+                  error: error,
+                  preserveOriginal: true,
+                ),
+              ),
+            );
+          }
+        },
+        onFormLookupResult: (formId, updated, failed) async {
+          final result = formResult(formId);
+          if (result == null) return;
+          result.lookupsCompleted = true;
+          result.updatedLookups = updated;
+          result.failedLookups = max(failed, result.lookupErrors.length);
+        },
       );
-      LogService.writeLog(message: "$tag[STEP_3] Datasources updated");
+      LogService.writeLog(
+        message:
+            "$tag[STEP_3] Lookups: "
+            '${lookupProgress.successCount.value} success, '
+            '${lookupProgress.failureCount.value} failed',
+      );
       refreshPendingCount();
-      progressModel.increment();
-      progressModel.updateMessage(
-        "Sync Complete!\nForms: ${pages.length} updated\nUploads: $pushResult",
+      final summary =
+          'Forms updated: ${pages.length}\n'
+          'Lookup data: ${lookupProgress.successCount.value} updated, '
+          '${lookupProgress.failureCount.value} failed'
+          '${transId == null ? '\nUploads: $pushResult' : ''}';
+      if (progressModel.failureCount.value > 0) {
+        progressModel.completeWithError(
+          errorMsg: summary,
+          statuscode: 'REFRESH_INCOMPLETE',
+        );
+        progressModel.title.value = 'Refresh completed with failures';
+      } else {
+        progressModel.complete();
+        progressModel.updateMessage(summary);
+      }
+      final failedLookups = max(
+        lookupFailures,
+        lookupProgress.failureCount.value,
       );
-
-      // Show the "Close" button and Green Check
-      progressModel.complete();
+      final uploadFailed =
+          uploadProgress.failureCount.value > 0 ||
+          uploadProgress.isCompletedWithError.value;
+      final completeSuccess =
+          progressModel.failureCount.value == 0 && failedLookups == 0;
+      final updatedFormCount = refreshReport?.updatedForms ?? pages.length;
+      await notice(
+        'summary',
+        completeSuccess ? 'refresh_success' : 'refresh_warning',
+        completeSuccess
+            ? transId == null
+                  ? 'All offline forms refreshed'
+                  : '$refreshCaption refreshed'
+            : 'Refresh completed with issues',
+        '$updatedFormCount ${updatedFormCount == 1 ? 'form' : 'forms'} updated. '
+            '${lookupProgress.successCount.value} ${lookupProgress.successCount.value == 1 ? 'lookup' : 'lookups'} updated'
+            '${failedLookups == 0 ? '.' : '; $failedLookups failed.'}'
+            '${uploadFailed ? ' Some pending records could not be sent. Check submission status before trying again.' : ''}',
+        updated: lookupProgress.successCount.value,
+        failed: failedLookups,
+      );
     } catch (e, st) {
-      progressModel.updateMessage("Sync Failed: $e");
-      progressModel.complete();
+      if (stage == 'forms') recordFormDownloadFailure();
+      await notice(
+        stage,
+        'refresh_error',
+        stage == 'forms'
+            ? transId == null
+                  ? 'Offline forms could not be downloaded'
+                  : '$refreshCaption could not be downloaded'
+            : 'Refresh could not be completed',
+        'We couldn’t finish refreshing offline data. Please try Refresh again.',
+      );
+      progressModel.increment(isSuccess: false);
+      progressModel.completeWithError(
+        errorMsg:
+            'Could not finish refreshing ${caption ?? 'offline data'}: $e',
+        statuscode: 'REFRESH_FAILED',
+      );
       LogService.writeLog(message: "$tag[FAILED] $e");
       LogService.writeLog(message: "$tag[STACK] $st");
 
@@ -1458,7 +1997,10 @@ class OfflineFormController extends GetxController {
         icon: const Icon(Icons.error, color: Colors.white),
       );
     } finally {
-      isLoading.value = false;
+      if (lockAcquired) {
+        await OfflineDbModule.releaseCachedSaveLock(owner: owner);
+      }
+      if (transId == null) isLoading.value = false;
     }
   }
 
@@ -1565,6 +2107,7 @@ class OfflineFormController extends GetxController {
   Future<void> actionExportDatabase() async {
     final String? choice = await _showExportChoiceDialog();
     if (choice == null) return;
+    final notifications = await OfflineNotifications.beginUpdate();
 
     try {
       isLoading.value = true;
@@ -1582,6 +2125,7 @@ class OfflineFormController extends GetxController {
         final File? bundle = await OfflineBundleService.createExportBundle();
         Get.back();
         if (bundle == null) {
+          await notifications?.exportResult(success: false);
           Get.snackbar("Export Failed", "Could not create export bundle.");
           return;
         }
@@ -1596,14 +2140,14 @@ class OfflineFormController extends GetxController {
                 child: const Text("Share"),
                 onPressed: () {
                   Get.back();
-                  _handleShare(bundle.path);
+                  _handleShare(bundle.path, notifications: notifications);
                 },
               ),
               TextButton(
                 child: const Text("Download"),
                 onPressed: () {
                   Get.back();
-                  _handleDownload(bundle.path);
+                  _handleDownload(bundle.path, notifications: notifications);
                 },
               ),
             ],
@@ -1623,6 +2167,10 @@ class OfflineFormController extends GetxController {
             colorText: Colors.white,
           );
         } catch (e) {
+          await notifications?.exportResult(
+            success: false,
+            error: e.toString(),
+          );
           Get.snackbar(
             "Upload Failed",
             e.toString(),
@@ -1637,6 +2185,7 @@ class OfflineFormController extends GetxController {
         // );
       }
     } catch (e) {
+      await notifications?.exportResult(success: false, error: e.toString());
       Get.snackbar("Export Failed", e.toString());
     } finally {
       isLoading.value = false;
@@ -1785,11 +2334,32 @@ class OfflineFormController extends GetxController {
     return result;
   }
 
-  Future<void> _handleShare(String path) async {
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(path)], text: 'Secure Offline Bundle'),
-    );
-    await _logAudit();
+  Future<void> _handleShare(
+    String path, {
+    OfflineUpdateNotificationRun? notifications,
+  }) async {
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(files: [XFile(path)], text: 'Secure Offline Bundle'),
+      );
+      await _logAudit();
+      if (result.status != ShareResultStatus.dismissed) {
+        await notifications?.exportResult(
+          success: true,
+          filePath: path,
+          shared: true,
+          confirmed: result.status == ShareResultStatus.success,
+        );
+      }
+    } catch (e) {
+      await notifications?.exportResult(success: false, error: e.toString());
+      if (notifications == null)
+        rethrow; // Preserve legacy callers' error behavior.
+      Get.snackbar(
+        'Export Failed',
+        'Could not share your offline backup. Please try again.',
+      );
+    }
   }
 
   Future<void> _handleDownload1(String sourcePath) async {
@@ -1832,7 +2402,10 @@ class OfflineFormController extends GetxController {
     'com.agile.ub_bottleapp/media_scanner',
   );
 
-  Future<void> _handleDownload(String filePath) async {
+  Future<void> _handleDownload(
+    String filePath, {
+    OfflineUpdateNotificationRun? notifications,
+  }) async {
     try {
       final fileName = basename(filePath);
 
@@ -1845,6 +2418,7 @@ class OfflineFormController extends GetxController {
       await File(filePath).copy(destPath);
 
       await _mediaScanner.invokeMethod('scanFile', {'path': destPath});
+      await notifications?.exportResult(success: true, filePath: destPath);
 
       Get.snackbar(
         "Downloaded",
@@ -1853,6 +2427,7 @@ class OfflineFormController extends GetxController {
         colorText: Colors.white,
       );
     } catch (e) {
+      await notifications?.exportResult(success: false, error: e.toString());
       Get.snackbar("Download Failed", e.toString());
     }
   }
@@ -2303,90 +2878,354 @@ class OfflineFormController extends GetxController {
     }
   }
 
+  // Previous manual sync implementations: retained for comparison.
+  //   Future<void> actionRefreshQueues() async {
+  //     const tag = "[OFFLINE_ACTION_REFRESH_PENDING]";
+  //     if (!await _isInternetAvailable()) {
+  //       _showNeedInternetDialog();
+  //       return;
+  //     }
+  //
+  //     var rows = await OfflineDbModule.getPendigQueuesToRefresh();
+  //
+  //     if (rows.isEmpty) {
+  //       await _confirm(
+  //         title: "No Pending Queues",
+  //         message:
+  //             "There is no pending Queues available.\n\nYou can try uploading new Queues to use this feature",
+  //         okText: "Okay",
+  //         icon: Icons.indeterminate_check_box_outlined,
+  //         confirmColor: const Color.fromARGB(255, 235, 103, 37),
+  //       );
+  //       return;
+  //     }
+  //     final ok = await _confirm(
+  //       title: "Refresh Pending Queues",
+  //       message:
+  //           "This will refresh ${rows.length} pendind queues from the server.\n\nAre you sure you want to continue?",
+  //       okText: "Refresh Now",
+  //       icon: Icons.cloud_upload_rounded,
+  //       confirmColor: const Color(0xFF2563EB),
+  //     );
+  //
+  //     if (!ok) return;
+  //
+  //     try {
+  //       final sessionResult = await Get.dialog<CachedSessionValidationResult>(
+  //         PopScope(canPop: false, child: const CachedSessionValidationDialog()),
+  //         barrierDismissible: false,
+  //       );
+  //
+  //       if (sessionResult != CachedSessionValidationResult.valid) {
+  //         final login = await _confirm(
+  //           title: "Invalid Session",
+  //           message:
+  //               "Your session has expired. Log back in to sync your pending data and access your forms.",
+  //           okText: "Okay",
+  //           icon: Icons.indeterminate_check_box_outlined,
+  //           confirmColor: const Color.fromARGB(255, 235, 103, 37),
+  //         );
+  //
+  //         cachedSaveUpdateMessage.value = "Invalid Session";
+  //
+  //         if (login) {
+  //           Get.offAllNamed(Routes.LOGIN);
+  //         }
+  //
+  //         return;
+  //       }
+  //
+  //       final refreshResult = await Get.dialog<CachedRefreshResult>(
+  //         CachedRefreshDialogWidget(refreshQueueRows: rows),
+  //         barrierDismissible: false,
+  //       );
+  //
+  //       if (refreshResult != CachedRefreshResult.refreshed) {
+  //         return;
+  //       }
+  //     } finally {
+  //       refreshPendingCount();
+  //     }
+  //   }
+  //
+  //   Future<void> actionPushPendingByCachedSave() async {
+  //     const tag = "[OFFLINE_ACTION_PUSH_PENDING_BY_CACHED_SAVE]";
+  //
+  //     if (!await _isInternetAvailable()) {
+  //       _showNeedInternetDialog();
+  //       return;
+  //     }
+  //
+  //     final pendingCount = await OfflineDbModule.getPendingCount();
+  //
+  //     if (pendingCount == 0) {
+  //       await _confirm(
+  //         title: "No Pending Data",
+  //         message:
+  //             "There is no pending data available.\n\nYou can try saving new forms offline to use this feature",
+  //         okText: "Okay",
+  //         icon: Icons.indeterminate_check_box_outlined,
+  //         confirmColor: const Color.fromARGB(255, 235, 103, 37),
+  //       );
+  //       return;
+  //     }
+  //
+  //     final ok = await _confirm(
+  //       title: "Upload Pending Data",
+  //       message:
+  //           "This will upload $pendingCount locally saved records to the server.\n\nAre you sure you want to continue?",
+  //       okText: "Upload Now",
+  //       icon: Icons.cloud_upload_rounded,
+  //       confirmColor: const Color(0xFF2563EB),
+  //     );
+  //
+  //     if (!ok) return;
+  //
+  //     cachedSaveUpdateMessage.value = "Starting Process";
+  //     isCachedSaveActive.value = true;
+  //
+  //     try {
+  //       /// ----------------------------------------------------------
+  //       /// STEP 1 : Validate Session
+  //       /// ----------------------------------------------------------
+  //       final sessionResult = await Get.dialog<CachedSessionValidationResult>(
+  //         PopScope(canPop: false, child: const CachedSessionValidationDialog()),
+  //         barrierDismissible: false,
+  //       );
+  //
+  //       if (sessionResult != CachedSessionValidationResult.valid) {
+  //         final login = await _confirm(
+  //           title: "Invalid Session",
+  //           message:
+  //               "Your session has expired. Log back in to sync your pending data and access your forms.",
+  //           okText: "Okay",
+  //           icon: Icons.indeterminate_check_box_outlined,
+  //           confirmColor: const Color.fromARGB(255, 235, 103, 37),
+  //         );
+  //
+  //         cachedSaveUpdateMessage.value = "Invalid Session";
+  //
+  //         if (login) {
+  //           Get.offAllNamed(Routes.LOGIN);
+  //         }
+  //
+  //         return;
+  //       }
+  //
+  //       /// ----------------------------------------------------------
+  //       /// STEP 2 : Check Pending Queue Refresh Count
+  //       /// ----------------------------------------------------------
+  //       final refreshQueueRows = await OfflineDbModule.getPendigQueuesToRefresh();
+  //
+  //       /// ----------------------------------------------------------
+  //       /// STEP 3 : Refresh Queue (only if required)
+  //       /// ----------------------------------------------------------
+  //       if (refreshQueueRows.isNotEmpty) {
+  //         final refreshResult = await Get.dialog<CachedRefreshResult>(
+  //           CachedRefreshDialogWidget(refreshQueueRows: refreshQueueRows),
+  //           barrierDismissible: false,
+  //         );
+  //
+  //         if (refreshResult != CachedRefreshResult.refreshed) {
+  //           return;
+  //         }
+  //
+  //         var newPendingCount = await OfflineDbModule.getPendingCount();
+  //         if (newPendingCount == 0) {
+  //           await Get.dialog(AllRecordsDoneDialog());
+  //           return;
+  //         }
+  //       }
+  //
+  //       /// ----------------------------------------------------------
+  //       /// STEP 4 : Upload Pending Data
+  //       /// ----------------------------------------------------------
+  //       cachedSaveUpdateMessage.value = "Uploading Pending Data";
+  //
+  //       Get.dialog(CachedSaveDialogWidget(), barrierDismissible: false);
+  //
+  //       await OfflineDbModule.startCachedSave(
+  //         controller: Get.find<OfflineFormController>(),
+  //       );
+  //     } catch (e, st) {
+  //       LogService.writeLog(message: "$tag [FAILED]\n$e\n$st");
+  //
+  //       Get.snackbar(
+  //         "Upload Error",
+  //         "Failed to process queue. Check logs.",
+  //         backgroundColor: Colors.redAccent,
+  //         colorText: Colors.white,
+  //         icon: const Icon(Icons.warning, color: Colors.white),
+  //       );
+  //     } finally {
+  //       isCachedSaveActive.value = false;
+  //       isLoading.value = false;
+  //       refreshPendingCount();
+  //     }
+  //   }
+
   Future<void> actionRefreshQueues() async {
     const tag = "[OFFLINE_ACTION_REFRESH_PENDING]";
+
+    // 1. Require internet before contacting the server.
     if (!await _isInternetAvailable()) {
       _showNeedInternetDialog();
       return;
     }
 
-    var rows = await OfflineDbModule.getPendigQueuesToRefresh();
-
+    // 2. Check whether there are queues available to refresh.
+    // Count/display form submissions only; the refresh button's resolver
+    // still processes both form and audit queues using its existing query.
+    final rows = formSubmissionQueues(
+      await OfflineDbModule.getPendigQueuesToRefresh(),
+    );
     if (rows.isEmpty) {
       await _confirm(
         title: "No Pending Queues",
-        message:
-            "There is no pending Queues available.\n\nYou can try uploading new Queues to use this feature",
+        message: "There are no pending queues to refresh.",
         okText: "Okay",
         icon: Icons.indeterminate_check_box_outlined,
         confirmColor: const Color.fromARGB(255, 235, 103, 37),
       );
       return;
     }
+
+    // 3. Confirm the refresh without holding the sync lock.
     final ok = await _confirm(
       title: "Refresh Pending Queues",
       message:
-          "This will refresh ${rows.length} pendind queues from the server.\n\nAre you sure you want to continue?",
+          "This will refresh ${rows.length} pending queues from the server.\n\n"
+          "Are you sure you want to continue?",
       okText: "Refresh Now",
       icon: Icons.cloud_upload_rounded,
       confirmColor: const Color(0xFF2563EB),
     );
-
     if (!ok) return;
 
+    // 4. Identify this run so it can release only its own lock.
+    final owner = 'manual-refresh-${DateTime.now().microsecondsSinceEpoch}';
+    bool lockAcquired = false;
+
     try {
+      // 5. Coordinate with background sync using its existing logical lock.
+      // No database transaction is held open during network operations.
+      // Offline form opening and saving do not acquire this lock.
+      lockAcquired = await OfflineDbModule.tryAcquireCachedSaveLock(
+        owner: owner,
+      );
+
+      // 6. Leave an existing sync running if the lock is unavailable.
+      if (!lockAcquired) {
+        Get.snackbar(
+          "Sync Busy",
+          "Another sync is already running. Please try again shortly.",
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
+      // 7. Validate the session before fetching server queue results.
       final sessionResult = await Get.dialog<CachedSessionValidationResult>(
         PopScope(canPop: false, child: const CachedSessionValidationDialog()),
         barrierDismissible: false,
       );
 
+      // 8. Offer login if the session is invalid.
       if (sessionResult != CachedSessionValidationResult.valid) {
         final login = await _confirm(
           title: "Invalid Session",
           message:
-              "Your session has expired. Log back in to sync your pending data and access your forms.",
+              "Your session has expired. Log back in to sync your pending "
+              "data and access your forms.",
           okText: "Okay",
           icon: Icons.indeterminate_check_box_outlined,
           confirmColor: const Color.fromARGB(255, 235, 103, 37),
         );
-
         cachedSaveUpdateMessage.value = "Invalid Session";
-
-        if (login) {
-          Get.offAllNamed(Routes.LOGIN);
-        }
-
+        if (login) Get.offAllNamed(Routes.LOGIN);
         return;
       }
 
-      final refreshResult = await Get.dialog<CachedRefreshResult>(
-        CachedRefreshDialogWidget(refreshQueueRows: rows),
+      // 9. Reload queues under the lock; background sync may have resolved
+      // the original list while the user was confirming this action.
+      final currentRows = formSubmissionQueues(
+        await OfflineDbModule.getPendigQueuesToRefresh(),
+      );
+      if (currentRows.isEmpty) {
+        await Get.dialog(AllRecordsDoneDialog());
+        return;
+      }
+
+      // 10. Keep the lock until the existing refresh dialog finishes.
+      await Get.dialog<CachedRefreshResult>(
+        CachedRefreshDialogWidget(refreshQueueRows: currentRows),
         barrierDismissible: false,
       );
-
-      if (refreshResult != CachedRefreshResult.refreshed) {
-        return;
-      }
+    } catch (e, st) {
+      // 11. Record unexpected errors and inform the user.
+      LogService.writeLog(message: "$tag [FAILED]\n$e\n$st");
+      Get.snackbar(
+        "Refresh Error",
+        "Failed to refresh queues. Please try again.",
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
-      refreshPendingCount();
+      // 12. Release only this run's acquired lock, including on early exits.
+      if (lockAcquired) {
+        try {
+          await OfflineDbModule.releaseCachedSaveLock(owner: owner);
+        } finally {
+          // 13. Update dashboard counts after the operation finishes.
+          await refreshPendingCount();
+        }
+      }
     }
   }
 
   Future<void> actionPushPendingByCachedSave() async {
+    // Claim the UI action synchronously, including during confirmations. The
+    // existing database lock below remains the authority across isolates.
+    if (sendPendingRecordsDisabled) return;
+    isSendingPendingRecords.value = true;
+    _sendBannerTimer?.cancel();
+    sendPendingBanner.value = null;
+    _deferredBatchBanner = false;
+    try {
+      // Establish a scoped notification cursor before this send can produce
+      // results. Reading existing notifications never changes sync eligibility.
+      await refreshBatchResultBanner();
+      await _pushPendingRecordsWithBanner();
+    } finally {
+      isSendingPendingRecords.value = false;
+      // This timer changes presentation only. Queued backend work continues.
+      if (_deferredBatchBanner && _batchBannerUpdates.latest != null) {
+        showSendPendingBanner(_batchBannerUpdates.latest!);
+        _deferredBatchBanner = false;
+      } else if (sendPendingBanner.value != null) {
+        showSendPendingBanner(sendPendingBanner.value!);
+      }
+    }
+  }
+
+  Future<void> _pushPendingRecordsWithBanner() async {
     const tag = "[OFFLINE_ACTION_PUSH_PENDING_BY_CACHED_SAVE]";
 
+    // 1. Require internet before attempting an upload.
     if (!await _isInternetAvailable()) {
       _showNeedInternetDialog();
       return;
     }
 
-    final pendingCount = await OfflineDbModule.getPendingCount();
-
-    if (pendingCount == 0) {
+    // 2. Check whether there are records available to upload.
+    final pendingRecords = await OfflineDbModule.getPendingCount();
+    if (pendingRecords == 0) {
       await _confirm(
         title: "No Pending Data",
         message:
-            "There is no pending data available.\n\nYou can try saving new forms offline to use this feature",
+            "There is no pending data available.\n\n"
+            "You can try saving new forms offline to use this feature.",
         okText: "Okay",
         icon: Icons.indeterminate_check_box_outlined,
         confirmColor: const Color.fromARGB(255, 235, 103, 37),
@@ -2394,86 +3233,199 @@ class OfflineFormController extends GetxController {
       return;
     }
 
+    // 3. Confirm the upload while background sync remains free to run.
     final ok = await _confirm(
       title: "Upload Pending Data",
       message:
-          "This will upload $pendingCount locally saved records to the server.\n\nAre you sure you want to continue?",
+          "This will upload $pendingRecords locally saved records "
+          "to the server.\n\nAre you sure you want to continue?",
       okText: "Upload Now",
       icon: Icons.cloud_upload_rounded,
       confirmColor: const Color(0xFF2563EB),
     );
-
     if (!ok) return;
 
-    cachedSaveUpdateMessage.value = "Starting Process";
-    isCachedSaveActive.value = true;
+    // 4. Give this upload run its own lock owner identifier.
+    final owner = 'manual-upload-${DateTime.now().microsecondsSinceEpoch}';
+    bool lockAcquired = false;
+    bool previousQueueIssues = false;
+    OfflineUpdateNotificationRun? sendNotificationRun;
 
     try {
-      /// ----------------------------------------------------------
-      /// STEP 1 : Validate Session
-      /// ----------------------------------------------------------
-      final sessionResult = await Get.dialog<CachedSessionValidationResult>(
-        PopScope(canPop: false, child: const CachedSessionValidationDialog()),
-        barrierDismissible: false,
+      // 5. Acquire the shared sync lock before queue refresh or upload.
+      // Form saves remain independent of this logical lock.
+      lockAcquired = await OfflineDbModule.tryAcquireCachedSaveLock(
+        owner: owner,
       );
 
+      // 6. Avoid overlapping uploads; do not interrupt background sync.
+      if (!lockAcquired) {
+        Get.snackbar(
+          "Sync Busy",
+          "Another sync is already running. Please try again shortly.",
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
+      // Capture the existing scope for an unexpected run-level error only.
+      // Batch acceptance/failure notifications still use their existing hooks.
+      sendNotificationRun = await OfflineNotifications.beginUpdate();
+
+      // 7. Set sync-specific state without changing the form's isLoading.
+      cachedSaveUpdateMessage.value = "Starting Process";
+      isCachedSaveActive.value = true;
+      // The old upload dialog cleared these presentation items in build().
+      // Reset once here instead so repeated banner rebuilds never lose batches.
+      cachedSaveQueItems.clear();
+      resetQueueTracking();
+      sendPendingBanner.value = const OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.checkingSession,
+        title: 'Checking your session',
+        description: 'Preparing to send · You can keep working',
+      );
+
+      // 8. Validate the session before contacting upload APIs.
+      // Previous progress dialog retained for comparison. Reuse its exact
+      // validation function directly; the banner now presents this stage.
+      // final sessionResult = await Get.dialog<CachedSessionValidationResult>(
+      //   PopScope(canPop: false, child: const CachedSessionValidationDialog()),
+      //   barrierDismissible: false,
+      // );
+      final sessionResult = await validateSession()
+          ? CachedSessionValidationResult.valid
+          : CachedSessionValidationResult.invalid;
+
+      // 9. Offer login if the session is invalid.
       if (sessionResult != CachedSessionValidationResult.valid) {
+        sendPendingBanner.value = null;
         final login = await _confirm(
           title: "Invalid Session",
           message:
-              "Your session has expired. Log back in to sync your pending data and access your forms.",
+              "Your session has expired. Log back in to sync your pending "
+              "data and access your forms.",
           okText: "Okay",
           icon: Icons.indeterminate_check_box_outlined,
           confirmColor: const Color.fromARGB(255, 235, 103, 37),
         );
-
         cachedSaveUpdateMessage.value = "Invalid Session";
-
-        if (login) {
-          Get.offAllNamed(Routes.LOGIN);
-        }
-
+        if (login) Get.offAllNamed(Routes.LOGIN);
         return;
       }
 
-      /// ----------------------------------------------------------
-      /// STEP 2 : Check Pending Queue Refresh Count
-      /// ----------------------------------------------------------
+      // 10. Find previous uploads awaiting server confirmation.
       final refreshQueueRows = await OfflineDbModule.getPendigQueuesToRefresh();
 
-      /// ----------------------------------------------------------
-      /// STEP 3 : Refresh Queue (only if required)
-      /// ----------------------------------------------------------
+      // 11. Resolve previous queues before selecting new upload batches.
       if (refreshQueueRows.isNotEmpty) {
-        final refreshResult = await Get.dialog<CachedRefreshResult>(
-          CachedRefreshDialogWidget(refreshQueueRows: refreshQueueRows),
-          barrierDismissible: false,
+        // Previous detail dialog retained. Resolve with the same shared
+        // function before selecting new batches, without blocking form use.
+        // final refreshResult = await Get.dialog<CachedRefreshResult>(
+        //   CachedRefreshDialogWidget(refreshQueueRows: refreshQueueRows),
+        //   barrierDismissible: false,
+        // );
+        // if (refreshResult != CachedRefreshResult.refreshed) return;
+        sendPendingBanner.value = const OfflineSendBannerState(
+          phase: OfflineSendBannerPhase.checkingQueues,
+          title: 'Checking earlier submissions',
+          description: 'Getting the latest queue results',
         );
-
-        if (refreshResult != CachedRefreshResult.refreshed) {
-          return;
-        }
-
-        var newPendingCount = await OfflineDbModule.getPendingCount();
-        if (newPendingCount == 0) {
-          await Get.dialog(AllRecordsDoneDialog());
-          return;
+        isPendingQuesRefreshing.value = true;
+        isPendingQueResolveComplete.value = false;
+        pendingQueResolveResults.clear();
+        try {
+          final results =
+              await OfflineDbModule.resolvePendingCachedSaveQueueBatches(
+                controller: this,
+              );
+          pendingQueResolveResults.assignAll(results);
+          previousQueueIssues = results.any(
+            (result) => result.isError || result.isPartial,
+          );
+        } finally {
+          isPendingQuesRefreshing.value = false;
+          isPendingQueResolveComplete.value = true;
         }
       }
 
-      /// ----------------------------------------------------------
-      /// STEP 4 : Upload Pending Data
-      /// ----------------------------------------------------------
+      // 12. Recheck pending records under the lock, even without a refresh.
+      final currentPendingCount = await OfflineDbModule.getPendingCount();
+      if (currentPendingCount == 0) {
+        // await Get.dialog(AllRecordsDoneDialog()); // Replaced by the banner.
+        sendPendingBanner.value = OfflineSendBannerState(
+          phase: previousQueueIssues
+              ? OfflineSendBannerPhase.issues
+              : OfflineSendBannerPhase.done,
+          title: 'No records to send',
+          description: 'Check earlier results in notifications',
+        );
+        return;
+      }
+
+      // 13. Keep the previous upload dialog opening code for comparison.
+      // Only its presentation is replaced; startCachedSave below is unchanged.
       cachedSaveUpdateMessage.value = "Uploading Pending Data";
+      // Get.dialog(CachedSaveDialogWidget(), barrierDismissible: false);
+      sendPendingBanner.value = const OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.uploading,
+        title: 'Sending offline records',
+        description: 'Preparing records · You can keep working',
+      );
 
-      Get.dialog(CachedSaveDialogWidget(), barrierDismissible: false);
-
-      await OfflineDbModule.startCachedSave(
-        controller: Get.find<OfflineFormController>(),
+      // 14. Await upload completion so the lock is not released early.
+      // Async I/O yields to Flutter's event loop. Do not acquire this lock
+      // again inside startCachedSave().
+      await OfflineDbModule.startCachedSave(controller: this);
+      // Acceptance into a queue is not successful server processing. Preserve
+      // actual accepted counts even if FCM has already updated a batch result.
+      final items = cachedSaveQueItems.map((item) => item.value).toList();
+      final accepted = OfflineSendBannerState.acceptedBatches(items);
+      final unsent = max(0, totalExpectedBatches.value - accepted);
+      // Group only this send's accepted record queues. Prepared IDs alone do
+      // not prove acceptance. Preserve unsent batches in the result summary.
+      _batchBannerUpdates.trackSubmission(
+        owner,
+        items
+            .where(
+              (item) => OfflineSendBannerState.acceptedBatches([item]) == 1,
+            )
+            .map((item) => item.qId),
+        unsentBatches: unsent,
+      );
+      final issues =
+          previousQueueIssues ||
+          unsent > 0 ||
+          totalExpectedBatches.value == 0 ||
+          items.any(
+            (item) =>
+                item.submissionStatus == QueueSubmissionStatus.error ||
+                item.failedItems > 0,
+          );
+      sendPendingBanner.value = OfflineSendBannerState(
+        phase: issues
+            ? OfflineSendBannerPhase.issues
+            : OfflineSendBannerPhase.done,
+        title: issues
+            ? 'Sending completed with issues'
+            : 'Records sent for processing',
+        description:
+            '$accepted batches queued${unsent > 0 ? ' · $unsent not sent' : ''} · View notifications',
       );
     } catch (e, st) {
+      // 15. Log upload errors and inform the user.
       LogService.writeLog(message: "$tag [FAILED]\n$e\n$st");
-
+      sendPendingBanner.value = const OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.issues,
+        title: 'Unable to finish sending',
+        description: 'Check submission details in notifications',
+      );
+      await sendNotificationRun?.notify(
+        event: 'send-error',
+        type: 'batch_error',
+        title: 'Sending offline records was interrupted',
+        message:
+            'Some records may already be queued. Remaining records are kept offline. Check submission status before trying again.',
+      );
       Get.snackbar(
         "Upload Error",
         "Failed to process queue. Check logs.",
@@ -2482,15 +3434,93 @@ class OfflineFormController extends GetxController {
         icon: const Icon(Icons.warning, color: Colors.white),
       );
     } finally {
-      isCachedSaveActive.value = false;
-      isLoading.value = false;
-      refreshPendingCount();
+      // 16. A rejected attempt must not reset another upload's UI state.
+      if (lockAcquired) {
+        isCachedSaveActive.value = false;
+        try {
+          // 17. Release this run's lock; background sync remains scheduled.
+          await OfflineDbModule.releaseCachedSaveLock(owner: owner);
+        } finally {
+          // 18. Refresh counts without changing the form's loading flag.
+          await refreshPendingCount();
+        }
+      }
     }
   }
 
   //////////////////////////////////////////////////////////////////////////////
   //////// Cached save progress update items/////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////
+  // Manual-send UI state is independent of the form loading state and of the
+  // background service. It never controls batching, retries or queue statuses.
+  final isSendingPendingRecords = false.obs;
+  final sendPendingBanner = Rxn<OfflineSendBannerState>();
+  Timer? _sendBannerTimer;
+  final _batchBannerUpdates = OfflineBatchBannerUpdates();
+  bool _readingBatchBanner = false;
+  bool _deferredBatchBanner = false;
+
+  /// Presentation only: new errors reset a two-minute timeout, other results
+  /// use five seconds. Polling the same stored event does not call this again.
+  void showSendPendingBanner(OfflineSendBannerState state) {
+    if (isClosed) return;
+    _sendBannerTimer?.cancel();
+    sendPendingBanner.value = state;
+    _sendBannerTimer = Timer(state.displayDuration, () {
+      if (identical(sendPendingBanner.value, state))
+        sendPendingBanner.value = null;
+    });
+  }
+
+  Future<void> refreshBatchResultBanner() async {
+    if (_readingBatchBanner || isClosed) return;
+    _readingBatchBanner = true;
+    try {
+      final snapshot = await OfflineNotifications.batchBannerSnapshot(
+        previousScope: _batchBannerUpdates.scope,
+        afterId: _batchBannerUpdates.lastId,
+      );
+      if (snapshot == null) return;
+      if (snapshot.baseline && _batchBannerUpdates.scope != null) {
+        _sendBannerTimer?.cancel();
+        sendPendingBanner.value = null;
+        _deferredBatchBanner = false;
+      }
+      final changed = _batchBannerUpdates.consume(snapshot);
+      if (!changed) return;
+      // Never replace session validation/upload progress or release its lock
+      // when a backend result arrives during a manual send.
+      if (isSendingPendingRecords.value) {
+        _deferredBatchBanner = true;
+      } else if (_batchBannerUpdates.latest != null) {
+        showSendPendingBanner(_batchBannerUpdates.latest!);
+      }
+    } catch (e) {
+      LogService.writeLog(
+        message: '[OFFLINE_BANNER] Result observation failed: $e',
+      );
+    } finally {
+      _readingBatchBanner = false;
+    }
+  }
+
+  bool get sendPendingRecordsDisabled =>
+      isSendingPendingRecords.value ||
+      isCachedSaveActive.value ||
+      isPendingQuesRefreshing.value ||
+      OfflineBackgroundSyncService.instance.isSyncing.value;
+
+  OfflineSendBannerState? get currentSendPendingBanner {
+    final state = sendPendingBanner.value;
+    if (state?.phase != OfflineSendBannerPhase.uploading) return state;
+    // Observe existing progress without adding API calls or a second counter.
+    return OfflineSendBannerState.uploading(
+      message: cachedSaveUpdateMessage.value,
+      totalBatches: totalExpectedBatches.value,
+      items: cachedSaveQueItems.map((item) => item.value).toList(),
+    );
+  }
+
   var isSessionCheckingForCachedSave = false.obs;
   var isPendingQuesRefreshing = false.obs;
   var pendingQueResolveResults = <QueueResolveResultModel>[].obs;

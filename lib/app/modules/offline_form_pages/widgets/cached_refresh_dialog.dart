@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/queue_resolve_result_model.dart';
 
-
 // enum CachedRefreshResult {
 //   cancelled,
 //   refreshed,
@@ -342,6 +341,12 @@ class CachedRefreshDialogWidget extends GetView<OfflineFormController> {
 
   @override
   Widget build(BuildContext context) {
+    // Filter presentation even when a caller supplies the complete queue list.
+    // Do not pass this filter into the shared queue resolver below.
+    final formQueues = controller.formSubmissionQueues(refreshQueueRows);
+    final formQueueIds = formQueues
+        .map((row) => row['queue_id'].toString())
+        .toSet();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.isPendingQueResolveComplete.value = false;
       controller.pendingQueResolveResults.clear();
@@ -354,8 +359,10 @@ class CachedRefreshDialogWidget extends GetView<OfflineFormController> {
       child: Obx(() {
         final bool isRefreshing = controller.isPendingQuesRefreshing.value;
         final bool isDone = controller.isPendingQueResolveComplete.value;
-        final List<QueueResolveResultModel> results =
-            controller.pendingQueResolveResults;
+        final List<QueueResolveResultModel> results = controller
+            .pendingQueResolveResults
+            .where((result) => formQueueIds.contains(result.queueId))
+            .toList();
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -404,15 +411,13 @@ class CachedRefreshDialogWidget extends GetView<OfflineFormController> {
                     child: ListView.separated(
                       physics: const BouncingScrollPhysics(),
                       shrinkWrap: true,
-                      itemCount: isDone
-                          ? results.length
-                          : refreshQueueRows.length,
+                      itemCount: isDone ? results.length : formQueues.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         if (isDone) {
                           return _buildResultRow(results[index], index);
                         }
-                        final queueId = refreshQueueRows[index]["queue_id"];
+                        final queueId = formQueues[index]["queue_id"];
                         return _buildQueueRow(queueId.toString(), index);
                       },
                     ),
@@ -435,7 +440,7 @@ class CachedRefreshDialogWidget extends GetView<OfflineFormController> {
                         : _infoBox(
                             icon: Icons.info_outline_rounded,
                             message:
-                                "Found ${refreshQueueRows.length} pending queue(s) from "
+                                "Found ${formQueues.length} pending queue(s) from "
                                 "previous push. Tap below to refresh their status.",
                             color: const Color(0xffF59E0B),
                           ),

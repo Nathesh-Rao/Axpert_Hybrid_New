@@ -1,266 +1,367 @@
-import 'package:axpert/app/modules/auth/controller/forgot_password_controller.dart';
-import 'package:axpert/app/modules/auth/widget/login_button.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../../widgets/connection_style.dart';
+import '../../../widgets/project_logo.dart';
+import '../controller/auth_controller.dart';
+import '../controller/forgot_password_controller.dart';
 
-import '../widget/login_field.dart';
-// Make sure to import your custom widgets here:
-// import 'package:axpert/app/modules/auth/widget/login_field.dart';
-// import 'package:axpert/app/modules/auth/widget/login_button.dart';
-
-class ForgetPasswordView extends GetView<ForgetPasswordController> {
+class ForgetPasswordView extends StatefulWidget {
   const ForgetPasswordView({super.key});
+  @override
+  State<ForgetPasswordView> createState() => _ForgetPasswordViewState();
+}
 
-  // Safely extract the color from route arguments (works if passed directly or in a map)
-  Color get _baseColor {
-    if (Get.arguments != null) {
-      if (Get.arguments is Map && Get.arguments['color'] != null) {
-        return Get.arguments['color'];
-      }
-    }
-    return const Color(0xff4B59D9);
-  }
+class _ForgetPasswordViewState extends State<ForgetPasswordView> {
+  final ForgetPasswordController controller = Get.find();
+  late final Future<PackageInfo> _version;
+  bool _hidePassword = true;
+  bool _hideConfirmation = true;
 
-  String get _projectName {
-    if (Get.arguments != null) {
-      if (Get.arguments is Map && Get.arguments['project'] != null) {
-        return Get.arguments['project'];
-      }
+  @override
+  void initState() {
+    super.initState();
+    final args = Get.arguments;
+    if (args is Map) {
+      controller.userNameController.text = args['username']?.toString() ?? '';
+      controller.projectName = args['project']?.toString() ?? '';
     }
-    return '';
-  }
-
-  String get _userName {
-    if (Get.arguments != null) {
-      if (Get.arguments is Color) return Get.arguments;
-      if (Get.arguments is Map && Get.arguments['username'] != null) {
-        return Get.arguments['username'];
-      }
-    }
-    return '';
+    _version = PackageInfo.fromPlatform();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final baseColor = _baseColor;
-    controller.userNameController.text = _userName;
-    controller.projectName = _projectName;
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, size: 30, color: baseColor),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          "Forgot Password",
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            fontSize: 18.0,
-            color: baseColor,
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: ConnectionStyle.card(context),
+    body: CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverToBoxAdapter(
+          child: ConnectionHero(
+            child: Stack(
+              children: [
+                SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 58),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: .14),
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              child: IconButton(
+                                tooltip: 'Back to sign in',
+                                onPressed: () => Get.back(),
+                                icon: const Icon(
+                                  Icons.arrow_back,
+                                  size: 20,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                'Forgot password',
+                                textAlign: TextAlign.center,
+                                style: ConnectionStyle.text(
+                                  context,
+                                  17,
+                                  weight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 48),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        if (Get.isRegistered<AuthController>())
+                          Obx(() {
+                            final auth = Get.find<AuthController>();
+                            return ProjectLogo(
+                              url: auth.selectedProject.value?.logourl ?? '',
+                              projectName: auth.currentProjectName.value,
+                              size: 68,
+                            );
+                          })
+                        else
+                          const ProjectLogo(url: '', size: 68),
+                        const SizedBox(height: 16),
+                        Obx(
+                          () => Text(
+                            controller.OTPSent.value
+                                ? 'Enter your OTP and choose a new password'
+                                : 'Enter your email to recover your password',
+                            textAlign: TextAlign.center,
+                            style: ConnectionStyle.text(
+                              context,
+                              14,
+                              color: Colors.white.withValues(alpha: .82),
+                            ).copyWith(height: 1.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: ConnectionStyle.card(context),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(32),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-            child: Container(
-              // EXACT styling from your LoginView container
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: baseColor.withValues(alpha: 0.5),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Obx(
+                    () => controller.OTPSent.value
+                        ? _otpForm(context)
+                        : _emailForm(context),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 32),
+                    child: FutureBuilder<PackageInfo>(
+                      future: _version,
+                      builder: (context, snapshot) => Text(
+                        snapshot.hasData
+                            ? 'v${snapshot.data!.version} · Axpert'
+                            : 'Axpert',
+                        style: ConnectionStyle.text(
+                          context,
+                          11,
+                          color: ConnectionStyle.muted(context),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 30),
-              child: Obx(
-                () => controller.OTPSent.value
-                    ? _buildOtpSection(context, baseColor)
-                    : _buildEmailSection(context, baseColor),
               ),
             ),
           ),
         ),
+      ],
+    ),
+  );
+
+  Widget _emailForm(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _field(
+        context,
+        label: 'Username',
+        hint: 'Enter your username',
+        icon: Icons.person_outline,
+        textController: controller.userNameController,
+        error: controller.errUserName.value,
+        readOnly: true,
       ),
-    );
-  }
-
-  // ==========================================
-  // REQUEST OTP SECTION
-  // ==========================================
-  Widget _buildEmailSection(BuildContext context, Color baseColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Image.asset(
-          'assets/images/axpert_full.png', // Or whatever logo you prefer here
-          height: MediaQuery.of(context).size.height * 0.05,
-          fit: BoxFit.contain,
+      const SizedBox(height: 20),
+      _field(
+        context,
+        label: 'Email address',
+        hint: 'Enter email address',
+        icon: Icons.email_outlined,
+        textController: controller.emailController,
+        error: controller.emailError.value,
+        keyboard: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
+      ),
+      const SizedBox(height: 20),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: ConnectionStyle.tint(context),
+          borderRadius: BorderRadius.circular(14),
         ),
-        const SizedBox(height: 20),
-        Text(
-          'Reset Password',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            fontSize: 24,
-            color: baseColor,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Enter email to receive an OTP',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
-            color: Colors.grey.shade600,
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Reusing your custom login field!
-        WidgetLoginTextField(
-          style2: true,
-          label: "Username",
-          hintText: "Enter User Name",
-          prefixIcon: const Icon(Icons.person_outline),
-          controller: controller.userNameController,
-          errorText: controller.errUserName.value,
-          baseColor: baseColor,
-          readOnly: true, // Based on your original code
-        ),
-
-        WidgetLoginTextField(
-          style2: true,
-          label: "Email",
-          hintText: "Enter Email Address",
-          prefixIcon: const Icon(Icons.email_outlined),
-          controller: controller.emailController,
-          errorText: controller.emailError.value,
-          baseColor: baseColor,
-        ),
-
-        const SizedBox(height: 40),
-
-        // Reusing your custom button!
-        WidgetLoginButton(
-          label: 'PROCEED',
-          color: baseColor,
-          onPressed: () => controller.proceedButtonClicked(),
-        ),
-      ],
-    );
-  }
-
-  // ==========================================
-  // OTP & NEW PASSWORD SECTION
-  // ==========================================
-  Widget _buildOtpSection(BuildContext context, Color baseColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          "OTP sent successfully",
-          textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-            color: baseColor,
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 25),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Enter OTP',
-                style: GoogleFonts.manrope(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: Colors.black, // Matches WidgetLoginTextField label
-                ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.shield_outlined,
+              size: 18,
+              color: ConnectionStyle.dark(context)
+                  ? const Color(0xff9DB6FF)
+                  : ConnectionStyle.navy,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Use the email address linked to your account. Password recovery instructions will be sent to this address.',
+                style: ConnectionStyle.text(context, 12).copyWith(height: 1.5),
               ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 18),
+      ConnectionButton(
+        label: controller.isFPasswordLoading.value
+            ? 'Please wait...'
+            : 'Proceed',
+        icon: Icons.arrow_forward,
+        loading: controller.isFPasswordLoading.value,
+        onPressed: controller.proceedButtonClicked,
+      ),
+    ],
+  );
+
+  Widget _otpForm(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        'OTP sent successfully',
+        style: ConnectionStyle.text(context, 18, weight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        children: [
+          Text(
+            'Check your email for the code.',
+            style: ConnectionStyle.text(
+              context,
+              12,
+              color: ConnectionStyle.muted(context),
+            ),
+          ),
+          TextButton(
+            onPressed: controller.showTimer.value ? null : controller.reSendOTP,
+            child: Text(
               controller.showTimer.value
-                  ? Text(
-                      "Resend in ${controller.timerText.value}",
-                      style: GoogleFonts.manrope(
-                        color: baseColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    )
-                  : InkWell(
-                      onTap: () => controller.reSendOTP(),
-                      child: Text(
-                        "Resend OTP",
-                        style: GoogleFonts.manrope(
-                          color: baseColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-            ],
+                  ? 'Resend in ${controller.timerText.value}'
+                  : 'Resend OTP',
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      _field(
+        context,
+        label: 'One-time password',
+        hint: 'Enter OTP',
+        icon: Icons.pin_outlined,
+        textController: controller.otpController,
+        error: controller.otpError.value,
+      ),
+      const SizedBox(height: 20),
+      _field(
+        context,
+        label: 'New password',
+        hint: 'Enter new password',
+        icon: Icons.lock_outline,
+        textController: controller.passwordController,
+        error: controller.passError.value,
+        obscure: _hidePassword,
+        suffix: IconButton(
+          tooltip: _hidePassword ? 'Show new password' : 'Hide new password',
+          onPressed: () => setState(() => _hidePassword = !_hidePassword),
+          icon: Icon(
+            _hidePassword
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
           ),
         ),
-
-        // OTP Field
-        WidgetLoginTextField(
-          style2: true,
-          label: "", // Label handled in the row above
-          hintText: "Enter OTP",
-          prefixIcon: const Icon(Icons.pin_outlined),
-          controller: controller.otpController,
-          errorText: controller.otpError.value,
-          baseColor: baseColor,
+      ),
+      const SizedBox(height: 20),
+      _field(
+        context,
+        label: 'Confirm password',
+        hint: 'Confirm new password',
+        icon: Icons.lock_outline,
+        textController: controller.confirmPasswordController,
+        error: controller.conPassError.value,
+        obscure: _hideConfirmation,
+        suffix: IconButton(
+          tooltip: _hideConfirmation
+              ? 'Show confirmation password'
+              : 'Hide confirmation password',
+          onPressed: () =>
+              setState(() => _hideConfirmation = !_hideConfirmation),
+          icon: Icon(
+            _hideConfirmation
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+          ),
         ),
+      ),
+      const SizedBox(height: 24),
+      ConnectionButton(
+        label: controller.isFPasswordLoading.value
+            ? 'Please wait...'
+            : 'Submit',
+        loading: controller.isFPasswordLoading.value,
+        onPressed: controller.submitOTPClicked,
+      ),
+    ],
+  );
 
-        // Passwords
-        // Note: Because your WidgetLoginTextField inherently handles the obscure/visibility toggle
-        // internally via `_isObscured`, you just need to pass `obscureText: true`!
-        WidgetLoginTextField(
-          style2: true,
-          label: "New Password",
-          hintText: "Enter New Password",
-          prefixIcon: const Icon(Icons.lock_outline),
-          controller: controller.passwordController,
-          errorText: controller.passError.value,
-          baseColor: baseColor,
-          obscureText: true,
+  Widget _field(
+    BuildContext context, {
+    required String label,
+    required String hint,
+    required IconData icon,
+    required TextEditingController textController,
+    required String error,
+    bool readOnly = false,
+    bool obscure = false,
+    Widget? suffix,
+    TextInputType? keyboard,
+    Iterable<String>? autofillHints,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 6),
+        child: Text(
+          label,
+          style: ConnectionStyle.text(
+            context,
+            12,
+            weight: FontWeight.w600,
+            color: ConnectionStyle.muted(context),
+          ),
         ),
-
-        WidgetLoginTextField(
-          style2: true,
-          label: "Confirm Password",
-          hintText: "Confirm Password",
-          prefixIcon: const Icon(Icons.lock_outline),
-          controller: controller.confirmPasswordController,
-          errorText: controller.conPassError.value,
-          baseColor: baseColor,
-          obscureText: true,
-        ),
-
-        const SizedBox(height: 40),
-
-        WidgetLoginButton(
-          label: 'SUBMIT',
-          color: baseColor,
-          onPressed: () => controller.submitOTPClicked(),
-        ),
-      ],
-    );
-  }
+      ),
+      TextField(
+        controller: textController,
+        readOnly: readOnly,
+        obscureText: obscure,
+        keyboardType: keyboard,
+        autofillHints: autofillHints,
+        autocorrect: false,
+        style: ConnectionStyle.text(context, 15),
+        decoration: ConnectionStyle.input(
+          context,
+          hint,
+          icon,
+          error: error,
+          suffix: suffix,
+        ).copyWith(errorMaxLines: 3),
+      ),
+    ],
+  );
 }

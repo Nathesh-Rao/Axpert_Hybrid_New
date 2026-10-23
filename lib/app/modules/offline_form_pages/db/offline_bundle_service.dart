@@ -294,6 +294,11 @@ class OfflineBundleService {
   }
 
   static Future<void> uploadDBFile() async {
+    // This upload has no active implementation below. Do not report success
+    // or create a success notification for an operation that did not run.
+    throw UnsupportedError(
+      'DB-only upload is not available. Please export a full backup instead.',
+    );
     // const String uploadAction = "DB_EXPORT_DB_ONLY";
 
     // try {

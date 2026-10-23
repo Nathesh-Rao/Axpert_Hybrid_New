@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:axpert/app/core/common.dart';
+import 'package:axpert/app/widgets/project_logo.dart';
 import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/enums/auth_enums.dart';
@@ -710,15 +711,12 @@ class AuthController extends GetxController {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.network(
-                    selectedProject.value?.logourl ?? "",
-                    height: 45,
-                    errorBuilder: (_, _, _) {
-                      return Image.asset(
-                        "assets/images/axpert_logo_new.png",
-                        height: 45,
-                      );
-                    },
+                  Obx(
+                    () => ProjectLogo(
+                      url: selectedProject.value?.logourl ?? '',
+                      projectName: currentProjectName.value,
+                      size: 45,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(

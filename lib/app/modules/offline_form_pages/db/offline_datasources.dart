@@ -10,6 +10,19 @@ import 'package:http/http.dart' as http;
 import '../../../data/services/log/log_service.dart';
 
 class OfflineDatasources {
+  // Read the server's diagnostic without rewriting its contents. Some API
+  // failures use `error`; others use `message` or nest them under `result`.
+  static String? _serverErrorMessage(dynamic value) {
+    if (value is String) return value.trim().isEmpty ? null : value;
+    if (value is Map) {
+      for (final key in ['error', 'message', 'result']) {
+        final message = _serverErrorMessage(value[key]);
+        if (message != null) return message;
+      }
+    }
+    return null;
+  }
+
   static final http.Client _client = http.Client();
 
   // API ENDPOINTS
@@ -113,6 +126,7 @@ class OfflineDatasources {
     required String username,
     required String appName,
     Map<String, dynamic>? sqlParams,
+    Map<String, String>? failureMessages,
   }) async {
     const String tag = "[FETCH_DS_BULK]";
     if (datasourceNames.isEmpty) return {};
@@ -151,6 +165,17 @@ class OfflineDatasources {
 
     if (serverResponse.isEmpty ||
         ApiManager.instance.isDsErrorResponse(serverResponse)) {
+      // Optional diagnostics do not alter the map returned to existing callers.
+      String reason = serverResponse;
+      try {
+        final decoded = jsonDecode(
+          serverResponse.replaceFirst(RegExp(r'^__[A-Z_0-9]+__'), ''),
+        );
+        reason = _serverErrorMessage(decoded) ?? reason;
+      } catch (_) {}
+      for (final ds in datasourceNames) {
+        failureMessages?[ds] = reason;
+      }
       LogService.writeLog(
         message:
             "$tag NON_SUCCESS_RESPONSE ds=$datasourceNames — returning {}.",
@@ -162,6 +187,9 @@ class OfflineDatasources {
     try {
       decoded = jsonDecode(serverResponse);
     } catch (e) {
+      for (final ds in datasourceNames) {
+        failureMessages?[ds] = 'Invalid response from server';
+      }
       LogService.writeLog(
         message: "$tag DECODE_FAILED ds=$datasourceNames — $e",
       );
@@ -170,6 +198,13 @@ class OfflineDatasources {
 
     final result = decoded['result'];
     if (result is! Map<String, dynamic> || result['success'] != true) {
+      for (final ds in datasourceNames) {
+        failureMessages?[ds] =
+            _serverErrorMessage(decoded) ??
+            (result is Map
+                ? 'No lookup data returned'
+                : 'Invalid response from server');
+      }
       LogService.writeLog(
         message:
             "$tag NOT_SUCCESS ds=$datasourceNames — "
@@ -180,6 +215,9 @@ class OfflineDatasources {
 
     final dsWrappers = result['data'];
     if (dsWrappers is! List) {
+      for (final ds in datasourceNames) {
+        failureMessages?[ds] = 'No lookup data returned';
+      }
       LogService.writeLog(
         message:
             "$tag NO_DS_WRAPPERS ds=$datasourceNames — result.data not a List.",
@@ -193,6 +231,11 @@ class OfflineDatasources {
       final String? adsname = wrapper['adsname']?.toString();
       if (adsname == null || adsname.isEmpty) continue;
       if (wrapper.containsKey('error')) {
+        final error = wrapper['error'];
+        failureMessages?[adsname] =
+            _serverErrorMessage(error) ??
+            error?.toString() ??
+            'No lookup data returned';
         LogService.writeLog(
           message: "$tag DS_ERROR adsname=$adsname error=${wrapper['error']}",
         );
