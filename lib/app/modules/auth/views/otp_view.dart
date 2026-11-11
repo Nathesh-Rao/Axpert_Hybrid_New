@@ -1,15 +1,25 @@
-import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/widgets/connection_style.dart';
 import '../../../core/common.dart';
 import '../controller/auth_controller.dart';
+import '../widget/auth_system_bars.dart';
 import '../widget/otp_field.dart';
 import '../../../widgets/project_logo.dart';
 
-class OTPView extends GetView<AuthController> {
+class OTPView extends StatefulWidget {
   const OTPView({super.key});
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  State<OTPView> createState() => _OTPViewState();
+}
+
+class _OTPViewState extends State<OTPView> {
+  final AuthController controller = Get.find();
+
+  @override
+  Widget build(BuildContext context) =>
+      AuthSystemBars(child: _buildScreen(context));
+
+  Widget _buildScreen(BuildContext context) => PopScope(
     canPop: false,
     onPopInvokedWithResult: (didPop, result) {
       if (!didPop) Get.offAllNamed(Routes.LOGIN);
@@ -271,34 +281,6 @@ class OTPView extends GetView<AuthController> {
                               11.5,
                               color: ConnectionStyle.muted(context),
                             ).copyWith(height: 1.6),
-                          ),
-                        ),
-                        const SizedBox(height: 36),
-                        Center(
-                          child: Text(
-                            'Powered by Axpert',
-                            style: ConnectionStyle.text(
-                              context,
-                              11,
-                              color: ConnectionStyle.muted(context),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Center(
-                          child: FutureBuilder<String>(
-                            future: controller.getVersionName(),
-                            builder: (context, snapshot) => snapshot.hasData
-                                ? Text(
-                                    'v${snapshot.data}_${AppConst.APP_RELEASE_ID}_${AppConst.APP_RELEASE_DATE}',
-                                    textAlign: TextAlign.center,
-                                    style: ConnectionStyle.text(
-                                      context,
-                                      10,
-                                      color: ConnectionStyle.muted(context),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
                           ),
                         ),
                         SizedBox(

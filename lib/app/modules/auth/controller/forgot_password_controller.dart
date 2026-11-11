@@ -100,7 +100,7 @@ class ForgetPasswordController extends GetxController {
       passError.value = "Enter Password";
       return false;
     }
-    if (!regex.hasMatch(passwordController.text)) {
+   /* if (!regex.hasMatch(passwordController.text)) {
       passError.value =
           "Password should contain upper, lower, digit and Special character";
       return false;
@@ -108,7 +108,7 @@ class ForgetPasswordController extends GetxController {
     if (passwordController.text.length <= 7) {
       passError.value = "Password is Weak Must be more than 8 characters";
       return false;
-    }
+    }*/
     if (confirmPasswordController.text.trim().isEmpty) {
       conPassError.value = "Enter Confirm password";
       return false;
@@ -224,6 +224,7 @@ class ForgetPasswordController extends GetxController {
 
       switch (result) {
         case ApiSuccess(:final data):
+          otpController.clear();
           Get.defaultDialog(
             title: "Success",
             middleText: data,

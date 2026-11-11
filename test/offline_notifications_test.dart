@@ -611,8 +611,8 @@ void main() {
   testWidgets(
     'parsed API results update the banner without changing read flags or extending duplicate errors',
     (tester) async {
-    final controller = _FormController();
-    await controller.refreshBatchResultBanner();
+      final controller = _FormController();
+      await controller.refreshBatchResultBanner();
       final first = await seedRecord();
       final second = await seedRecord();
       await seedQueue([first, second]);
@@ -902,6 +902,10 @@ void main() {
       expect(controller.sendPendingRecordsDisabled, isFalse);
       expect(controller.isLoading.value, isFalse);
       expect(
+        controller.dashboardSendStatus.phase,
+        isNot(OfflineSendBannerPhase.confirmed),
+      );
+      expect(
         controller.currentSendPendingBanner!.phase,
         scenario == 'failure'
             ? OfflineSendBannerPhase.issues
@@ -935,6 +939,12 @@ void main() {
       await OfflineDbModule.releaseCachedSaveLock(owner: 'banner-test');
       await tester.pump(Duration(seconds: scenario == 'failure' ? 121 : 6));
       expect(controller.currentSendPendingBanner, isNull);
+      if (scenario == 'success') {
+        expect(
+          controller.dashboardSendStatus.phase,
+          OfflineSendBannerPhase.waiting,
+        );
+      }
       controller.onClose();
       await tester.pumpWidget(const SizedBox());
     });
@@ -967,6 +977,14 @@ void main() {
         'cached_save_queue',
         where: 'source_table = ?',
         whereArgs: ['offline_pending_requests'],
+      );
+      final controller = OfflineFormController();
+      addTearDown(controller.onClose);
+      await controller.refreshPendingCount();
+      await controller.refreshBatchResultBanner();
+      expect(
+        controller.dashboardSendStatus.phase,
+        OfflineSendBannerPhase.waiting,
       );
       await http.runWithClient(
         () =>
@@ -1010,6 +1028,11 @@ void main() {
       expect(
         (await store.list()).where((e) => e.type == 'batch_success').length,
         2,
+      );
+      await controller.refreshBatchResultBanner();
+      expect(
+        controller.dashboardSendStatus.phase,
+        OfflineSendBannerPhase.confirmed,
       );
     },
   );

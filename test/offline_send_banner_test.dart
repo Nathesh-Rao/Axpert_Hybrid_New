@@ -1,11 +1,49 @@
+import 'package:axpert/app/controller/global_controller.dart';
+import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:axpert/app/modules/offline_form_pages/controller/offline_form_controller.dart';
 import 'package:axpert/app/modules/offline_form_pages/auto_sync/offline_background_sync_service.dart';
 import 'package:axpert/app/modules/offline_form_pages/models/cached_save_item_model.dart';
 import 'package:axpert/app/modules/offline_form_pages/models/offline_send_banner_state.dart';
 import 'package:axpert/app/modules/offline_form_pages/models/offline_batch_banner_updates.dart';
+import 'package:axpert/app/modules/offline_form_pages/models/form_page_model.dart';
+import 'package:axpert/app/modules/offline_form_pages/pages/offline_listing_page.dart';
 import 'package:axpert/app/modules/offline_form_pages/widgets/offline_send_status_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class _DashboardController extends OfflineFormController {
+  int loads = 0;
+  int sends = 0;
+  int notifications = 0;
+
+  @override
+  // The dashboard test supplies its own data and does not start sync polling.
+  // ignore: must_call_super
+  void onInit() {}
+
+  @override
+  Future<void> getAllPages() async {
+    loads++;
+    allPages.assignAll([
+      OfflineFormPageModel.fromJson({'caption': 'Inward Entry'}),
+      OfflineFormPageModel.fromJson({'caption': 'Stock Transfer'}),
+    ]);
+    pendingCount.value = 2;
+  }
+
+  @override
+  Future<void> actionPushPendingByCachedSave() async {
+    sends++;
+  }
+
+  @override
+  Future<void> openOfflineNotifications() async {
+    notifications++;
+  }
+}
 
 CachedSaveItemModel batch(
   QueueSubmissionStatus status, {
@@ -21,6 +59,75 @@ CachedSaveItemModel batch(
 );
 
 void main() {
+  testWidgets(
+    'home search and layout retain the existing send and bell actions',
+    (tester) async {
+      final allowFonts = GoogleFonts.config.allowRuntimeFetching;
+      GoogleFonts.config.allowRuntimeFetching = false;
+      addTearDown(() {
+        GoogleFonts.config.allowRuntimeFetching = allowFonts;
+        Get.reset();
+      });
+      await tester.binding.setSurfaceSize(const Size(320, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.runAsync(() async {
+        SharedPreferences.setMockInitialValues({});
+        await StorageService.init();
+      });
+      Get.put(GlobalVariableController());
+      final controller =
+          Get.put<OfflineFormController>(_DashboardController())
+              as _DashboardController;
+      await tester.pumpWidget(const GetMaterialApp(home: OfflineListingPage()));
+      await tester.pumpAndSettle();
+      expect(find.text('2 forms available offline'), findsOneWidget);
+      expect(find.text('Refresh'), findsNothing);
+      await tester.tap(find.text('Send records'));
+      expect(controller.sends, 1);
+      final listView = find.byIcon(Icons.format_list_bulleted_rounded);
+      final dashboard = find.byType(CustomScrollView);
+      while (listView.hitTestable().evaluate().isEmpty) {
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+        final before = position.pixels;
+        await tester.drag(dashboard, const Offset(0, -190));
+        await tester.pumpAndSettle();
+        expect(position.pixels, greaterThan(before));
+      }
+      final toggle = find.byType(ToggleButtons);
+      final toggleBounds = tester.getRect(toggle);
+      await tester.tapAt(toggleBounds.centerRight - const Offset(18, 0));
+      await tester.pumpAndSettle();
+      expect(tester.widget<ToggleButtons>(toggle).isSelected, [false, true]);
+      final formsSliver = tester
+          .widget<CustomScrollView>(dashboard)
+          .slivers
+          .whereType<SliverPadding>()
+          .last
+          .child;
+      expect(formsSliver, isA<SliverList>());
+      await tester.ensureVisible(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'inward');
+      await tester.pumpAndSettle();
+      expect(find.text('Inward Entry'), findsOneWidget);
+      expect(find.text('Stock Transfer'), findsNothing);
+      expect(controller.loads, 1);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 500));
+      await tester.pumpAndSettle();
+      controller.pendingCount.value = 0;
+      controller.pendingQueuesCount.value = 1;
+      await tester.pumpAndSettle();
+      expect(find.text('Waiting for server confirmation'), findsOneWidget);
+      await tester.tap(find.byTooltip('Open notifications'));
+      await tester.tap(find.byTooltip('Offline notifications'));
+      expect(controller.notifications, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   Map<String, dynamic> result(
     int id,
     String queue,
@@ -98,6 +205,7 @@ void main() {
         ),
       );
       expect(updates.latest!.phase, OfflineSendBannerPhase.processing);
+      expect(updates.latest!.serverConfirmed, isFalse);
       expect(updates.latest!.isBusy, isFalse);
       expect(updates.latest!.animatesProgress, isTrue);
       updates.consume(
@@ -108,6 +216,7 @@ void main() {
         ),
       );
       expect(updates.latest!.title, 'All 60 records submitted');
+      expect(updates.latest!.serverConfirmed, isTrue);
       expect(updates.latest!.displayDuration, const Duration(seconds: 5));
     },
   );
@@ -222,6 +331,7 @@ void main() {
       ),
     );
     expect(updates.latest!.hasIssues, isTrue);
+    expect(updates.latest!.serverConfirmed, isFalse);
     expect(updates.latest!.description, contains('1 batch not sent'));
   });
 
@@ -258,6 +368,18 @@ void main() {
       expect(controller.currentSendPendingBanner, isNotNull);
       await tester.pump(const Duration(seconds: 1));
       expect(controller.currentSendPendingBanner, isNull);
+      controller.pendingQueuesCount.value = 1;
+      expect(
+        controller.dashboardSendStatus.phase,
+        OfflineSendBannerPhase.waiting,
+      );
+      controller.pendingQueuesCount.value = 0;
+      expect(controller.dashboardSendStatus.phase, OfflineSendBannerPhase.idle);
+      controller.pendingCount.value = 1;
+      expect(
+        controller.dashboardSendStatus.phase,
+        OfflineSendBannerPhase.pending,
+      );
       controller.onClose();
     },
   );
@@ -386,7 +508,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(rotation, findsNothing);
-      await tester.tap(find.text('Records sent for processing'));
+      await tester.tap(find.byTooltip('Open notifications'));
       expect(opened, 1);
       expect(tester.takeException(), isNull);
     },

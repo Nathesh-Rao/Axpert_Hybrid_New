@@ -32,6 +32,8 @@ class ApiEndpoints {
   static const String API_GET_DATASOURCE_RESPONSE =
       "ARM_APIs/api/v1/ARMGetDataResponse";
   static const String API_GET_APPSTATUS = "ARM_APIs/api/v1/ARMAppStatus";
+  static const String API_VALIDATE_APP_SETTINGS =
+      "ARM_APIs/api/v1/ValidateAppSettings";
   static const String API_MOBILE_NOTIFICATION =
       "ARMNotificationHub/api/v1/ARMMobileNotification";
   static const String API_GET_DASHBOARD_DATA =

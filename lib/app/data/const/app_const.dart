@@ -20,7 +20,7 @@ class AppConst {
       "/Webservice.asmx/SetHybridNotifiInfo";
   static final String SET_HYBRID_INFO = "/Webservice.asmx/SetHybridInfo";
   static String APP_RELEASE_ID = "TESTRELEASE_02";
-  static String APP_RELEASE_DATE = "01102026";
+  static String APP_RELEASE_DATE = "05112026";
   static String DEVICE_ID = "";
   static String APP_VERSION = "";
   static String GUID = "";

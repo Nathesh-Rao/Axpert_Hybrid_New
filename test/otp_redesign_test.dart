@@ -72,9 +72,13 @@ void main() {
         tester.view.physicalSize = const Size(320, 568);
         tester.view.devicePixelRatio = 1;
         tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+        tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+        tester.view.padding = FakeViewPadding.zero;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetViewInsets);
+        addTearDown(tester.view.resetViewPadding);
+        addTearDown(tester.view.resetPadding);
         final c = Get.put<AuthController>(_OtpTestAuth());
         c.otpChars.value = '$length';
         c.otpErrorText.value = 'The code is invalid. Please try again.';
@@ -82,6 +86,10 @@ void main() {
           GetMaterialApp(theme: ThemeData.dark(), home: const OTPView()),
         );
         await tester.pumpAndSettle();
+        final footer = find.text('Powered by Axpert');
+        final version = find.textContaining('v11.4.0_');
+        expect(footer, findsNothing);
+        expect(version, findsNothing);
         await tester.ensureVisible(find.byType(WidgetOtpTextField));
         await tester.pumpAndSettle();
         expect(tester.widget<Pinput>(find.byType(Pinput)).length, length);
@@ -91,6 +99,11 @@ void main() {
         );
         await tester.ensureVisible(find.text('Login'));
         await tester.pumpAndSettle();
+        tester.view.viewInsets = FakeViewPadding.zero;
+        tester.view.padding = const FakeViewPadding(bottom: 48);
+        await tester.pumpAndSettle();
+        expect(footer, findsNothing);
+        expect(version, findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

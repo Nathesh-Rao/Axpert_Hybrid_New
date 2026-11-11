@@ -117,6 +117,7 @@ class OfflineBatchBannerUpdates {
       title: title,
       description: detail,
       progress: complete || unknownIssues > 0 ? null : processed / ids.length,
+      serverConfirmed: complete && !issues && successful > 0,
     );
   }
 }

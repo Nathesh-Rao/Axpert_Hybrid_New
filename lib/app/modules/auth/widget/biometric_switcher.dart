@@ -9,6 +9,7 @@ class BiometricSwitcher extends GetView<AuthController> {
     return Obx(() {
       final isLoading = controller.isBiometricLoading.value;
       final isAvailable =
+          controller.rememberMe.value &&
           controller.isBiometricAvailable.value &&
           controller.willBio_userAuthenticate.value;
 

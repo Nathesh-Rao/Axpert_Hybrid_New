@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import '../../../widgets/connection_style.dart';
 import '../../../widgets/project_logo.dart';
 import '../controller/auth_controller.dart';
 import '../controller/forgot_password_controller.dart';
+import '../widget/auth_system_bars.dart';
 
 class ForgetPasswordView extends StatefulWidget {
   const ForgetPasswordView({super.key});
@@ -14,7 +14,6 @@ class ForgetPasswordView extends StatefulWidget {
 
 class _ForgetPasswordViewState extends State<ForgetPasswordView> {
   final ForgetPasswordController controller = Get.find();
-  late final Future<PackageInfo> _version;
   bool _hidePassword = true;
   bool _hideConfirmation = true;
 
@@ -26,11 +25,13 @@ class _ForgetPasswordViewState extends State<ForgetPasswordView> {
       controller.userNameController.text = args['username']?.toString() ?? '';
       controller.projectName = args['project']?.toString() ?? '';
     }
-    _version = PackageInfo.fromPlatform();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) =>
+      AuthSystemBars(child: _buildScreen(context));
+
+  Widget _buildScreen(BuildContext context) => Scaffold(
     backgroundColor: ConnectionStyle.card(context),
     body: CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -131,32 +132,11 @@ class _ForgetPasswordViewState extends State<ForgetPasswordView> {
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 0, 22, 16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Obx(
-                    () => controller.OTPSent.value
-                        ? _otpForm(context)
-                        : _emailForm(context),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 32),
-                    child: FutureBuilder<PackageInfo>(
-                      future: _version,
-                      builder: (context, snapshot) => Text(
-                        snapshot.hasData
-                            ? 'v${snapshot.data!.version} · Axpert'
-                            : 'Axpert',
-                        style: ConnectionStyle.text(
-                          context,
-                          11,
-                          color: ConnectionStyle.muted(context),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 4),
+              child: Obx(
+                () => controller.OTPSent.value
+                    ? _otpForm(context)
+                    : _emailForm(context),
               ),
             ),
           ),

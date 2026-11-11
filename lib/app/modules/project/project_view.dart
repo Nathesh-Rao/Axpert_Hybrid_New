@@ -498,71 +498,80 @@ class ProjectView extends GetView<ProjectController> {
                     dismissible: !controller.isProjectSaving.value,
                     onDismiss: controller.onTileCloseClick,
                   ),
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * .88,
-                      ),
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        12,
-                        20,
-                        MediaQuery.viewInsetsOf(context).bottom,
-                      ),
-                      decoration: BoxDecoration(
-                        color: ConnectionStyle.card(context),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(28),
+                  LayoutBuilder(
+                    builder: (_, constraints) => Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        constraints: BoxConstraints(
+                          // Scaffold already removes the keyboard height. Use
+                          // that remaining space instead of subtracting it twice.
+                          maxHeight: constraints.maxHeight * .96,
                         ),
-                      ),
-                      child: SafeArea(
-                        top: false,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: ConnectionStyle.line(context),
-                                  borderRadius: BorderRadius.circular(2),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                        decoration: BoxDecoration(
+                          color: ConnectionStyle.card(context),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(28),
+                          ),
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          // Read the page's original inset: Scaffold removes
+                          // bottom padding from its body when a footer exists,
+                          // even when that footer is currently empty.
+                          minimum: EdgeInsets.only(
+                            bottom: MediaQuery.viewInsetsOf(context).bottom > 0
+                                ? 16
+                                : MediaQuery.viewPaddingOf(context).bottom + 20,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: ConnectionStyle.line(context),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
                                 ),
-                              ),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      state == ProjectAddingState.qrScan
-                                          ? 'Scan QR code'
-                                          : state == ProjectAddingState.urlEdit
-                                          ? 'Edit connection'
-                                          : 'Add by URL',
-                                      style: ConnectionStyle.text(
-                                        context,
-                                        18,
-                                        weight: FontWeight.w800,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        state == ProjectAddingState.qrScan
+                                            ? 'Scan QR code'
+                                            : state ==
+                                                  ProjectAddingState.urlEdit
+                                            ? 'Edit connection'
+                                            : 'Add by URL',
+                                        style: ConnectionStyle.text(
+                                          context,
+                                          18,
+                                          weight: FontWeight.w800,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  IconButton(
-                                    onPressed: controller.isProjectSaving.value
-                                        ? null
-                                        : controller.onTileCloseClick,
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
-                              ),
-                              if (state == ProjectAddingState.qrScan)
-                                const SizedBox(
-                                  height: 320,
-                                  child: ProjectHeroQrWidget(),
-                                )
-                              else
-                                const ConnectionEditor(),
-                              const SizedBox(height: 20),
-                            ],
+                                    IconButton(
+                                      onPressed:
+                                          controller.isProjectSaving.value
+                                          ? null
+                                          : controller.onTileCloseClick,
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ],
+                                ),
+                                if (state == ProjectAddingState.qrScan)
+                                  const SizedBox(
+                                    height: 320,
+                                    child: ProjectHeroQrWidget(),
+                                  )
+                                else
+                                  const ConnectionEditor(),
+                                const SizedBox(height: 20),
+                              ],
+                            ),
                           ),
                         ),
                       ),
