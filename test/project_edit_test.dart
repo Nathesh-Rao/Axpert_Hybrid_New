@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:axpert/app/data/enums/project_enums.dart';
 import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/db/project_database.dart';
@@ -36,11 +38,17 @@ void main() {
               final args = call.arguments as Map;
               final sql = args['sql'] as String;
               if (sql.contains('user_version')) {
-                return [{'user_version': 4}];
+                return [
+                  {'user_version': 4},
+                ];
               }
               queries.add(Map<dynamic, dynamic>.from(args));
               // A different project owns the requested caption.
-              return sql.contains('caption = ?') ? [{'id': 2}] : [];
+              return sql.contains('caption = ?')
+                  ? [
+                      {'id': 2},
+                    ]
+                  : [];
             case 'execute':
             case 'closeDatabase':
               return null;
@@ -57,15 +65,21 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  testWidgets('new project rejects an existing caption and retains inputs', (tester) async {
+  testWidgets('new project rejects an existing caption and retains inputs', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ScreenUtilInit(builder: (_, _) => const MaterialApp(home: SizedBox())),
     );
     final controller = Get.put<ProjectController>(_EditController());
     final formKey = GlobalKey<FormState>();
-    await tester.pumpWidget(GetMaterialApp(
-      home: Scaffold(body: Form(key: formKey, child: const SizedBox())),
-    ));
+    await tester.pumpWidget(
+      GetMaterialApp(
+        home: Scaffold(
+          body: Form(key: formKey, child: const SizedBox()),
+        ),
+      ),
+    );
     controller.onAddManuallyClick();
     controller.webUrlCtrl.text = 'https://example.com/new-project';
     controller.armUrlCtrl.text = 'https://example.com/arm';
@@ -88,17 +102,88 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('QR checks the same normalized URLs and caption for duplicates', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ScreenUtilInit(builder: (_, _) => const GetMaterialApp(home: Scaffold())),
+    );
+    final controller = Get.put<ProjectController>(_EditController());
+    controller.currentTileState.value = ProjectAddingState.qrScan;
+    final saved = await controller.onQRDetected(
+      jsonEncode({
+        'p_url': ' example.com/new-project ',
+        'arm_url': ' example.com/arm ',
+        'pname': ' Taken caption ',
+      }),
+    );
+    expect(saved, isFalse);
+    expect(queries[0]['arguments'], [
+      'https://example.com/new-project',
+      'https://example.com/arm',
+      'Taken caption',
+    ]);
+    expect(queries[1]['arguments'], ['Taken caption']);
+    expect(controller.currentTileState.value, ProjectAddingState.defaultState);
+    expect(controller.isProjectSaving.value, isFalse);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'invalid QR inputs stop before database checks and release saving state',
+    (tester) async {
+      await tester.pumpWidget(
+        ScreenUtilInit(
+          builder: (_, _) => const GetMaterialApp(home: Scaffold()),
+        ),
+      );
+      final controller = Get.put<ProjectController>(_EditController());
+      for (final payload in [
+        'not json',
+        jsonEncode({
+          'p_url': 'bad-url',
+          'arm_url': 'https://example.com',
+          'pname': 'demo',
+        }),
+        jsonEncode({'p_url': 'https://example.com', 'pname': 'demo'}),
+        jsonEncode({
+          'p_url': 'https://example.com',
+          'arm_url': 'https://example.com',
+          'pname': 'ab',
+        }),
+      ]) {
+        controller.currentTileState.value = ProjectAddingState.qrScan;
+        expect(await controller.onQRDetected(payload), isFalse);
+        expect(controller.isProjectSaving.value, isFalse);
+        expect(
+          controller.currentTileState.value,
+          ProjectAddingState.defaultState,
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      }
+      expect(queries, isEmpty);
+    },
+  );
+
   test('database add rejects an existing caption before inserting', () async {
-    final result = await ProjectDatabase.instance.add(const ProjectModel(
-      url: 'https://example.com/new-project',
-      armurl: 'https://example.com/arm',
-      schemaName: 'new-project',
-      caption: '  Taken caption  ',
-    ));
+    final result = await ProjectDatabase.instance.add(
+      const ProjectModel(
+        url: 'https://example.com/new-project',
+        armurl: 'https://example.com/arm',
+        schemaName: 'new-project',
+        caption: '  Taken caption  ',
+      ),
+    );
 
     expect(result, isA<DbError<ProjectModel>>());
-    expect((result as DbError<ProjectModel>).message,
-        'This caption is already used by another project.');
+    expect(
+      (result as DbError<ProjectModel>).message,
+      'This caption is already used by another project.',
+    );
     expect(queries.length, 2);
     expect(queries[1]['arguments'], ['Taken caption']);
     expect(queries[1]['sql'], isNot(contains('id != ?')));
@@ -136,7 +221,9 @@ void main() {
     final formKey = GlobalKey<FormState>();
     await tester.pumpWidget(
       GetMaterialApp(
-        home: Scaffold(body: Form(key: formKey, child: const SizedBox())),
+        home: Scaffold(
+          body: Form(key: formKey, child: const SizedBox()),
+        ),
       ),
     );
     const project = ProjectModel(
@@ -154,7 +241,12 @@ void main() {
 
     expect(queries.length, 2);
     expect(queries[0]['sql'], contains('id != ?'));
-    expect(queries[0]['arguments'], [project.url, project.armurl, 'project', 1]);
+    expect(queries[0]['arguments'], [
+      project.url,
+      project.armurl,
+      'project',
+      1,
+    ]);
     expect(queries[1]['arguments'], ['Taken caption', 1]);
     expect(controller.editingProject.value?.id, 1);
     expect(controller.currentTileState.value, ProjectAddingState.urlEdit);

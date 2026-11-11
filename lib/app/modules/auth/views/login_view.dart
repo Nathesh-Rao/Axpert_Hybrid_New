@@ -4,6 +4,7 @@ import 'package:axpert/app/data/enums/auth_enums.dart';
 import 'package:axpert/app/widgets/connection_style.dart';
 import 'package:axpert/app/widgets/project_logo.dart';
 import '../controller/auth_controller.dart';
+import '../widget/auth_system_bars.dart';
 import '../widget/biometric_switcher.dart';
 
 class LoginView extends StatefulWidget {
@@ -43,19 +44,29 @@ class _LoginViewState extends State<LoginView> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) => AuthSystemBars(
+    child: ColoredBox(
+      color: ConnectionStyle.card(context),
+      child: CustomPaint(
+        painter: _LoginBackground(),
+        child: _buildScreen(context),
+      ),
+    ),
+  );
+
+  Widget _buildScreen(BuildContext context) => PopScope(
     canPop: false,
     onPopInvokedWithResult: (didPop, result) async {
       if (!didPop) await controller.showExitConfirmationSheet();
     },
     child: Scaffold(
-      backgroundColor: ConnectionStyle.card(context),
+      backgroundColor: Colors.transparent,
       bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
           ? null
           : SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: FutureBuilder<String>(
                   future: _version,
                   builder: (context, snapshot) => Text(
@@ -381,332 +392,367 @@ class _LoginViewState extends State<LoginView> {
                 ),
                 Transform.translate(
                   offset: const Offset(0, -34),
-                  child: Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.fromLTRB(
-                      constraints.maxWidth < 360
-                          ? 20
-                          : (constraints.maxWidth - 440) / 2 > 28
-                          ? (constraints.maxWidth - 440) / 2
-                          : 28,
-                      28,
-                      constraints.maxWidth < 360
-                          ? 20
-                          : (constraints.maxWidth - 440) / 2 > 28
-                          ? (constraints.maxWidth - 440) / 2
-                          : 28,
-                      0,
-                    ),
-                    decoration: BoxDecoration(
-                      color: ConnectionStyle.card(context),
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(32),
+                  child: CustomPaint(
+                    painter: _LoginFormTop(ConnectionStyle.card(context)),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        constraints.maxWidth < 360
+                            ? 20
+                            : (constraints.maxWidth - 440) / 2 > 28
+                            ? (constraints.maxWidth - 440) / 2
+                            : 28,
+                        28,
+                        constraints.maxWidth < 360
+                            ? 20
+                            : (constraints.maxWidth - 440) / 2 > 28
+                            ? (constraints.maxWidth - 440) / 2
+                            : 28,
+                        0,
                       ),
-                    ),
-                    child: CustomPaint(
-                      painter: _LoginBackground(),
-                      child: Obx(() {
-                        final password = controller.isPWD_auth.value;
-                        final busy = _busy;
-                        return AutofillGroup(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (!password) ...[
-                                Text(
-                                  'Let’s get you signed in',
-                                  style: ConnectionStyle.text(
-                                    context,
-                                    21,
-                                    weight: FontWeight.w800,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Obx(() {
+                          final password = controller.isPWD_auth.value;
+                          final busy = _busy;
+                          return AutofillGroup(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!password) ...[
+                                  Text(
+                                    'Let’s get you signed in',
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      21,
+                                      weight: FontWeight.w800,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Enter your username to continue to your account.',
-                                  style: ConnectionStyle.text(
-                                    context,
-                                    13,
-                                    color: ConnectionStyle.muted(context),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Enter your username to continue to your account.',
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      13,
+                                      color: ConnectionStyle.muted(context),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 24),
-                              ],
-                              if (password) ...[
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 46,
-                                      height: 46,
-                                      alignment: Alignment.center,
-                                      decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Color(0xffFFC067),
-                                            ConnectionStyle.orange,
+                                  const SizedBox(height: 24),
+                                ],
+                                if (password) ...[
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 46,
+                                        height: 46,
+                                        alignment: Alignment.center,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Color(0xffFFC067),
+                                              ConnectionStyle.orange,
+                                            ],
+                                          ),
+                                        ),
+                                        child: Text(
+                                          controller.userNameController.text
+                                                  .trim()
+                                                  .isEmpty
+                                              ? '?'
+                                              : controller
+                                                    .userNameController
+                                                    .text
+                                                    .trim()
+                                                    .substring(0, 1)
+                                                    .toUpperCase(),
+                                          style: ConnectionStyle.text(
+                                            context,
+                                            18,
+                                            weight: FontWeight.w800,
+                                            color: const Color(0xff1A2447),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Hi, ${_greetingName(controller.userNameController.text)}',
+                                              style: ConnectionStyle.text(
+                                                context,
+                                                17,
+                                                weight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Enter your password to sign in',
+                                              style: ConnectionStyle.text(
+                                                context,
+                                                12,
+                                                color: ConnectionStyle.muted(
+                                                  context,
+                                                ),
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
-                                      child: Text(
-                                        controller.userNameController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? '?'
-                                            : controller.userNameController.text
-                                                  .trim()
-                                                  .substring(0, 1)
-                                                  .toUpperCase(),
-                                        style: ConnectionStyle.text(
-                                          context,
-                                          18,
-                                          weight: FontWeight.w800,
-                                          color: const Color(0xff1A2447),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Hi, ${_greetingName(controller.userNameController.text)}',
-                                            style: ConnectionStyle.text(
-                                              context,
-                                              17,
-                                              weight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Enter your password to sign in',
-                                            style: ConnectionStyle.text(
-                                              context,
-                                              12,
-                                              color: ConnectionStyle.muted(
-                                                context,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 18),
-                                _label(context, 'Password'),
-                                TextField(
-                                  controller: controller.userPasswordController,
-                                  focusNode: controller.passwordFocus,
-                                  enabled: !busy,
-                                  obscureText: controller.showPassword.value,
-                                  autofillHints: const [AutofillHints.password],
-                                  onChanged: (_) =>
-                                      controller.errPassword.value = '',
-                                  onSubmitted: (_) => _submit(),
-                                  style: ConnectionStyle.text(context, 15),
-                                  decoration: _input(
-                                    context,
-                                    'Your password',
-                                    Icons.lock_outline,
-                                    error: controller.errPassword.value,
-                                    suffix: IconButton(
-                                      tooltip: controller.showPassword.value
-                                          ? 'Show password'
-                                          : 'Hide password',
-                                      onPressed: controller.showPassword.toggle,
-                                      icon: Icon(
-                                        controller.showPassword.value
-                                            ? Icons.visibility_outlined
-                                            : Icons.visibility_off_outlined,
-                                        color: ConnectionStyle.muted(context),
-                                      ),
-                                    ),
+                                    ],
                                   ),
-                                ),
-                              ] else ...[
-                                _label(context, 'Username'),
-                                TextField(
-                                  controller: controller.userNameController,
-                                  enabled: !busy,
-                                  autofillHints: const [AutofillHints.username],
-                                  autocorrect: false,
-                                  textInputAction: TextInputAction.go,
-                                  onChanged: (_) =>
-                                      controller.errUserName.value = '',
-                                  onSubmitted: (_) => _submit(),
-                                  style: ConnectionStyle.text(context, 15),
-                                  decoration: _input(
-                                    context,
-                                    'Enter your username',
-                                    Icons.person_outline,
-                                    error: controller.errUserName.value,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 4),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: ListTileTheme(
-                                      data: ListTileTheme.of(context).copyWith(
-                                        horizontalTitleGap: 4,
-                                        minLeadingWidth: 24,
-                                        minTileHeight: 44,
-                                      ),
-                                      child: CheckboxListTile(
-                                        key: const ValueKey(
-                                          'remember-me-checkbox',
-                                        ),
-                                        contentPadding: EdgeInsets.zero,
-                                        visualDensity: const VisualDensity(
-                                          horizontal: -4,
-                                          vertical: -2,
-                                        ),
-                                        controlAffinity:
-                                            ListTileControlAffinity.leading,
-                                        dense: true,
-                                        activeColor: ConnectionStyle.navy,
-                                        checkColor: Colors.white,
-                                        side: BorderSide(
+                                  const SizedBox(height: 18),
+                                  _label(context, 'Password'),
+                                  TextField(
+                                    controller:
+                                        controller.userPasswordController,
+                                    focusNode: controller.passwordFocus,
+                                    enabled: !busy,
+                                    obscureText: controller.showPassword.value,
+                                    autofillHints: const [
+                                      AutofillHints.password,
+                                    ],
+                                    onChanged: (_) =>
+                                        controller.errPassword.value = '',
+                                    onSubmitted: (_) => _submit(),
+                                    style: ConnectionStyle.text(context, 15),
+                                    decoration: _input(
+                                      context,
+                                      'Your password',
+                                      Icons.lock_outline,
+                                      error: controller.errPassword.value,
+                                      suffix: IconButton(
+                                        tooltip: controller.showPassword.value
+                                            ? 'Show password'
+                                            : 'Hide password',
+                                        onPressed:
+                                            controller.showPassword.toggle,
+                                        icon: Icon(
+                                          controller.showPassword.value
+                                              ? Icons.visibility_outlined
+                                              : Icons.visibility_off_outlined,
                                           color: ConnectionStyle.muted(context),
-                                          width: 1.5,
                                         ),
-                                        checkboxShape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            4,
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  _label(context, 'Username'),
+                                  TextField(
+                                    controller: controller.userNameController,
+                                    enabled: !busy,
+                                    autofillHints: const [
+                                      AutofillHints.username,
+                                    ],
+                                    autocorrect: false,
+                                    textInputAction: TextInputAction.go,
+                                    onChanged: (_) {
+                                      controller.errUserName.value = '';
+                                      controller.biometricLoginInputEdited();
+                                    },
+                                    onSubmitted: (_) => _submit(),
+                                    style: ConnectionStyle.text(context, 15),
+                                    decoration: _input(
+                                      context,
+                                      'Enter your username',
+                                      Icons.person_outline,
+                                      error: controller.errUserName.value,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: ListTileTheme(
+                                        data: ListTileTheme.of(context)
+                                            .copyWith(
+                                              horizontalTitleGap: 4,
+                                              minLeadingWidth: 24,
+                                              minTileHeight: 44,
+                                            ),
+                                        child: CheckboxListTile(
+                                          key: const ValueKey(
+                                            'remember-me-checkbox',
                                           ),
+                                          contentPadding: EdgeInsets.zero,
+                                          visualDensity: const VisualDensity(
+                                            horizontal: -4,
+                                            vertical: -2,
+                                          ),
+                                          controlAffinity:
+                                              ListTileControlAffinity.leading,
+                                          dense: true,
+                                          activeColor: ConnectionStyle.navy,
+                                          checkColor: Colors.white,
+                                          side: BorderSide(
+                                            color: ConnectionStyle.muted(
+                                              context,
+                                            ),
+                                            width: 1.5,
+                                          ),
+                                          checkboxShape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          title: Text(
+                                            'Remember me',
+                                            style: ConnectionStyle.text(
+                                              context,
+                                              13,
+                                              weight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          value: controller.rememberMe.value,
+                                          onChanged: busy
+                                              ? null
+                                              : (value) {
+                                                  controller.rememberMe.value =
+                                                      value ?? false;
+                                                  controller
+                                                      .biometricLoginInputEdited();
+                                                },
                                         ),
-                                        title: Text(
-                                          'Remember me',
-                                          style: ConnectionStyle.text(
+                                      ),
+                                    ),
+                                    if (password)
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                            vertical: 12,
+                                          ),
+                                          foregroundColor: ConnectionStyle.navy,
+                                          textStyle: ConnectionStyle.text(
                                             context,
-                                            13,
+                                            12,
                                             weight: FontWeight.w600,
                                           ),
                                         ),
-                                        value: controller.rememberMe.value,
-                                        onChanged: busy
+                                        onPressed: busy
                                             ? null
-                                            : (value) =>
-                                                  controller.rememberMe.value =
-                                                      value ?? false,
+                                            : () => Get.toNamed(
+                                                Routes.FORGOT_PASSWORD,
+                                                arguments: {
+                                                  'color': controller
+                                                      .selectedColor
+                                                      .value,
+                                                  'project': controller
+                                                      .currentProjectName
+                                                      .value,
+                                                  'username': controller
+                                                      .userNameController
+                                                      .text,
+                                                },
+                                              ),
+                                        child: const Text('Forgot password?'),
                                       ),
-                                    ),
-                                  ),
-                                  if (password)
-                                    TextButton(
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 12,
-                                        ),
-                                        foregroundColor: ConnectionStyle.navy,
-                                        textStyle: ConnectionStyle.text(
-                                          context,
-                                          12,
-                                          weight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      onPressed: busy
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      boxShadow:
+                                          busy ||
+                                              controller
+                                                      .selectedProject
+                                                      .value ==
+                                                  null
                                           ? null
-                                          : () => Get.toNamed(
-                                              Routes.FORGOT_PASSWORD,
-                                              arguments: {
-                                                'color': controller
-                                                    .selectedColor
-                                                    .value,
-                                                'project': controller
-                                                    .currentProjectName
-                                                    .value,
-                                                'username': controller
-                                                    .userNameController
-                                                    .text,
-                                              },
-                                            ),
-                                      child: const Text('Forgot password?'),
+                                          : const [
+                                              BoxShadow(
+                                                color: Color(0xb32D4E9E),
+                                                blurRadius: 20,
+                                                spreadRadius: -8,
+                                                offset: Offset(0, 10),
+                                              ),
+                                            ],
                                     ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(14),
-                                    boxShadow:
-                                        busy ||
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        minHeight: 52,
+                                      ),
+                                      child: ConnectionButton(
+                                        label: busy
+                                            ? controller.isUserDataLoading.value
+                                                  ? 'Validating user...'
+                                                  : controller
+                                                        .signInApiStatusMessage
+                                                        .value
+                                            : password
+                                            ? controller.authType.value ==
+                                                      AuthType.both
+                                                  ? 'Get OTP'
+                                                  : 'Sign in'
+                                            : 'Continue',
+                                        icon: Icons.arrow_forward,
+                                        loading: busy,
+                                        onPressed:
                                             controller.selectedProject.value ==
                                                 null
-                                        ? null
-                                        : const [
-                                            BoxShadow(
-                                              color: Color(0xb32D4E9E),
-                                              blurRadius: 20,
-                                              spreadRadius: -8,
-                                              offset: Offset(0, 10),
-                                            ),
-                                          ],
-                                  ),
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      minHeight: 52,
-                                    ),
-                                    child: ConnectionButton(
-                                      label: busy
-                                          ? controller.isUserDataLoading.value
-                                                ? 'Validating user...'
-                                                : controller
-                                                      .signInApiStatusMessage
-                                                      .value
-                                          : password
-                                          ? controller.authType.value ==
-                                                    AuthType.both
-                                                ? 'Get OTP'
-                                                : 'Sign in'
-                                          : 'Continue',
-                                      icon: Icons.arrow_forward,
-                                      loading: busy,
-                                      onPressed:
-                                          controller.selectedProject.value ==
-                                              null
-                                          ? null
-                                          : _submit,
+                                            ? null
+                                            : _submit,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              if (password)
+                                if (password)
+                                  Center(
+                                    child: TextButton(
+                                      onPressed: busy ? null : _resetUsername,
+                                      child: const Text(
+                                        'Not you? Use another username',
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: 16),
                                 Center(
-                                  child: TextButton(
-                                    onPressed: busy ? null : _resetUsername,
-                                    child: const Text(
-                                      'Not you? Use another username',
+                                  child: Text(
+                                    'By continuing, you agree to the Privacy Policy\nand Terms of Use.',
+                                    textAlign: TextAlign.center,
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      11,
+                                      color: ConnectionStyle.muted(context),
                                     ),
                                   ),
                                 ),
-                              const SizedBox(height: 16),
-                              Center(
-                                child: Text(
-                                  'By continuing, you agree to the Privacy Policy\nand Terms of Use.',
-                                  textAlign: TextAlign.center,
-                                  style: ConnectionStyle.text(
-                                    context,
-                                    11,
-                                    color: ConnectionStyle.muted(context),
+                                const Center(child: BiometricSwitcher()),
+                                const SizedBox(height: 10),
+                                Center(
+                                  child: Text(
+                                    'Powered by',
+                                    style: ConnectionStyle.text(
+                                      context,
+                                      11,
+                                      color: ConnectionStyle.muted(context),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 18),
-                              const Center(child: BiometricSwitcher()),
-                              const SizedBox(height: 18),
-                              const SizedBox(height: 16),
-                            ],
-                          ),
-                        );
-                      }),
+                                const SizedBox(height: 6),
+                                Center(
+                                  child: Image.asset(
+                                    'assets/images/axpert_logo_new.png',
+                                    width: 34,
+                                    height: 34,
+                                    fit: BoxFit.contain,
+                                    semanticLabel: 'Axpert',
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                const SizedBox(height: 18),
+                                const SizedBox(height: 16),
+                              ],
+                            ),
+                          );
+                        }),
+                      ),
                     ),
                   ),
                 ),
@@ -777,6 +823,26 @@ class _LoginViewState extends State<LoginView> {
       ),
     ),
   );
+}
+
+// Paint the rounded surface only where the form overlaps the hero.
+class _LoginFormTop extends CustomPainter {
+  _LoginFormTop(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      const BorderRadius.vertical(
+        top: Radius.circular(32),
+      ).toRRect(Rect.fromLTWH(0, 0, size.width, 34)),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LoginFormTop oldDelegate) => color != oldDelegate.color;
 }
 
 class _LoginBackground extends CustomPainter {

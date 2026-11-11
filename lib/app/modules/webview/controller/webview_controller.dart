@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:axpert/app/controller/global_controller.dart';
 import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/core/utils/utils.dart';
+import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'dart:async';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -210,161 +211,188 @@ class WebViewController extends GetxController {
   // ────────────────────────────────────────────────────────────────
 
   Future<void> getBiometricStatus() async {
-    var tag = "getBiometricStatus";
-
-    var willAuthLocal = StorageService.getWillBiometricAuthenticateForThisUser(
-      projectName: projectname,
-      username: username,
+    final project = await StorageService.getLastSelectedProject();
+    final enrolledUser = username;
+    if (project == null ||
+        !_canOfferBiometricEnrollment(project, enrolledUser)) {
+      return;
+    }
+    final permission = await ApiManager.instance.checkBiometricFlag(
+      baseUrl: project.armurl.trim(),
+      appName: project.schemaName.trim(),
     );
-
-    log("willAuthLocal : $willAuthLocal", name: tag);
-    if (willAuthLocal == null || willAuthLocal == false) {
-      Get.bottomSheet(
-        PopScope(
-          canPop: false,
-          child: Container(
-            padding: EdgeInsets.only(
-              top: 12,
-              left: 24,
-              right: 24,
-              bottom: MediaQuery.of(Get.context!).padding.bottom + 24,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  height: 4,
-                  width: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+    if (isClosed ||
+        permission is! ApiSuccess<bool> ||
+        !permission.data ||
+        !_canOfferBiometricEnrollment(project, enrolledUser)) {
+      return;
+    }
+    var authenticating = false;
+    Get.bottomSheet(
+      PopScope(
+        canPop: false,
+        child: Container(
+          padding: EdgeInsets.only(
+            top: 12,
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.of(Get.context!).padding.bottom + 24,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 4,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(height: 32),
+              ),
+              const SizedBox(height: 32),
 
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.darkBlue.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.fingerprint_rounded,
-                    color: AppColors.darkBlue,
-                    size: 64,
-                  ),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.darkBlue.withOpacity(0.1),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 24),
-
-                // Title
-                Text(
-                  "Biometric Authentication",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 22,
-                    color: AppColors.darkBlue,
-                  ),
-                  textAlign: TextAlign.center,
+                child: const Icon(
+                  Icons.fingerprint_rounded,
+                  color: AppColors.darkBlue,
+                  size: 64,
                 ),
-                const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 24),
 
-                // Subtitle
-                Text(
-                  "Log into your project account faster and more securely using your phone's biometric credentials.",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w400,
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
+              // Title
+              Text(
+                "Biometric Authentication",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 22,
+                  color: AppColors.darkBlue,
                 ),
-                const SizedBox(height: 32),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
 
-                // Primary Action Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.darkBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+              // Subtitle
+              Text(
+                "Log into your project account faster and more securely using your phone's biometric credentials.",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w400,
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+
+              // Primary Action Button
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.darkBlue,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    onPressed: () async {
-                      var willAuthenticate =
+                  ),
+                  onPressed: () async {
+                    if (authenticating) return;
+                    authenticating = true;
+                    try {
+                      final verified =
                           await CommonMethods.showBiometricDialog();
-                      log("willAuthenticate : $willAuthenticate", name: tag);
-
-                      Get.back();
-                      await StorageService.setWillBiometricAuthenticateForThisUser(
-                        projectName: projectname,
-                        username: username,
-                        willAuthenticate: willAuthenticate,
-                      );
-                      willAuth = willAuthenticate;
-                    },
-                    child: Text(
-                      "Enable Biometric Login",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        letterSpacing: 0.5,
-                      ),
+                      if (verified &&
+                          !isClosed &&
+                          _canOfferBiometricEnrollment(project, enrolledUser)) {
+                        willAuth =
+                            await StorageService.enrollLastBiometricLogin(
+                              project,
+                              enrolledUser,
+                            );
+                      }
+                    } finally {
+                      if (!isClosed && (Get.isBottomSheetOpen ?? false)) {
+                        Get.back();
+                      }
+                    }
+                  },
+                  child: Text(
+                    "Enable Biometric Login",
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 12),
 
-                // Secondary Action Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+              // Secondary Action Button
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey.shade700,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    onPressed: () async {
-                      Get.back();
-                      await StorageService.setWillBiometricAuthenticateForThisUser(
-                        projectName: projectname,
-                        username: username,
-                        willAuthenticate: false,
-                      );
-                      willAuth = false;
-                    },
-                    child: Text(
-                      "Skip for now",
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+                  ),
+                  onPressed: () {
+                    if (authenticating) return;
+                    Get.back();
+                    willAuth = false;
+                  },
+                  child: Text(
+                    "Skip for now",
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        isDismissible: false,
-        isScrollControlled: true,
-        enableDrag: false,
-        barrierColor: Colors.black.withValues(alpha: 0.4),
-        enterBottomSheetDuration: const Duration(milliseconds: 400),
-      );
-    } else {
-      willAuth = willAuthLocal;
+      ),
+      isDismissible: false,
+      isScrollControlled: true,
+      enableDrag: false,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      enterBottomSheetDuration: const Duration(milliseconds: 400),
+    );
+  }
+
+  bool _canOfferBiometricEnrollment(ProjectModel project, String user) {
+    if (user.isEmpty ||
+        project.schemaName != StorageService.projectName ||
+        user != StorageService.userName ||
+        project.armurl != StorageService.armUrl ||
+        !StorageService.canAuthenticate ||
+        StorageService.getRememberedUser(
+              StorageService.connectionLoginKey(project),
+            ) !=
+            user) {
+      return false;
     }
+    final login = StorageService.lastBiometricLogin(project);
+    return login?['username'] == user &&
+        login?['enrolled'] != true &&
+        (login?['password']?.toString().isNotEmpty ?? false);
   }
 
   // ────────────────────────────────────────────────────────────────

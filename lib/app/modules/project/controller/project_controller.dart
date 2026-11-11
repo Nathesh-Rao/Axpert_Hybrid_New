@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:axpert/app/data/models/qr_payload.dart';
+import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:axpert/app/db/project_database.dart';
@@ -71,137 +73,25 @@ class ProjectController extends GetxController
 
   // ── QR detected callback (pass this to QrScannerWidget) ──────────
   Future<bool> onQRDetected(String raw) async {
-    // 1. Parse & validate
-    projectSavingStarted();
+    if (isProjectSaving.value) return false;
     final payload = QrPayload.tryParse(raw);
     if (payload == null) {
       HapticManager.error();
       _showInvalidQrSnackbar();
-      currentTileState.value = ProjectAddingState.defaultState;
+      _goToDefault();
       return false;
     }
 
-    DuplicateReason dReason = await ProjectDatabase.instance.checkDuplicate(
-      url: payload.pUrl,
-      armurl: payload.armUrl,
-      schemaName: payload.pName,
+    final saved = await _saveProjectConnection(
+      projectUrl: payload.pUrl,
+      armUrl: payload.armUrl,
+      connectionName: payload.pName,
       caption: payload.pName,
     );
-
-    if (dReason != DuplicateReason.none) {
-      currentTileState.value = ProjectAddingState.defaultState;
-      _showErrorSnackbar(_getDuplicateReason(dReason));
-      projectSavingStopped();
-      return false;
+    if (!saved && currentTileState.value == ProjectAddingState.qrScan) {
+      _goToDefault();
     }
-    updateSavingInfoText("Validating ARM");
-    var isProjectValid = await _checkArmStatus(armUrl: payload.armUrl);
-    if (!isProjectValid) {
-      projectSavingStopped();
-      currentTileState.value = ProjectAddingState.defaultState;
-
-      return false;
-    }
-
-    updateSavingInfoText("Validating Connection");
-    var isConnectionValid = await _validateConnectionName(
-      baseUrl: payload.armUrl,
-      appName: payload.pName,
-    );
-    if (!isConnectionValid) {
-      projectSavingStopped();
-      currentTileState.value = ProjectAddingState.defaultState;
-      return false;
-    }
-
-    updateSavingInfoText("fetching project details");
-    var logoUrl = await getLogoUrl(
-      webUrl: payload.pUrl,
-      projectName: payload.pName,
-    );
-    final logocolor = logoUrl.isNotEmpty
-        ? await extractLogoColorHex(logoUrl)
-        : '';
-
-    // 2. Build model
-    final project = ProjectModel(
-      logourl: logoUrl,
-      color: logocolor,
-      url: payload.pUrl,
-      armurl: payload.armUrl,
-      schemaName: payload.pName,
-      caption: payload.pName, // pname doubles as caption like old app
-    );
-
-    // 3. Save to DB
-    final result = await ProjectDatabase.instance.add(project);
-    switch (result) {
-      case DbSuccess(:final data):
-        HapticManager.success();
-        if (StorageService.isFirstTime) {
-          await StorageService.setFirstTimeDone();
-        }
-        projects.add(data);
-        await fetchProjects();
-        _goToDefault();
-        _showSuccessSnackbar("${data.schemaName} added successfully.");
-
-      case DbError(:final message):
-        // Duplicate or other DB error — show message, stay on QR screen
-        currentTileState.value = ProjectAddingState.defaultState;
-
-        HapticManager.error();
-        Get.snackbar(
-          '',
-          '',
-          titleText: const SizedBox.shrink(),
-          messageText: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.accentRed.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.error_outline_rounded,
-                  color: AppColors.accentRed,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  message,
-                  style: GoogleFonts.poppins(
-                    color: AppColors.textWhite,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: AppColors.cardBackground,
-          borderRadius: 14,
-          borderColor: AppColors.glassBorder,
-          borderWidth: 0.8,
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          duration: const Duration(seconds: 3),
-          boxShadows: const [
-            BoxShadow(
-              color: AppColors.shadowColor,
-              blurRadius: 16,
-              offset: Offset(2, 2),
-            ),
-          ],
-        );
-    }
-    projectSavingStopped();
-    return true;
+    return saved;
   }
 
   String _getDuplicateReason(DuplicateReason r) {
@@ -561,7 +451,8 @@ class ProjectController extends GetxController
       caseSensitive: false,
     );
 
-    if (!urlRegExp.hasMatch(value.trim())) {
+    final uri = Uri.tryParse(_normalizeProjectUrl(value));
+    if (!urlRegExp.hasMatch(value.trim()) || uri == null || uri.host.isEmpty) {
       return 'Please enter a valid URL';
     }
 
@@ -582,128 +473,107 @@ class ProjectController extends GetxController
     return null;
   }
 
-  void onSaveUrlDetails(GlobalKey<FormState> formKey) async {
+  Future<void> onSaveUrlDetails(GlobalKey<FormState> formKey) async {
     if (isProjectSaving.value) return;
     if (!validate(formKey)) {
       HapticManager.warning();
       return;
     }
+    await _saveProjectConnection(
+      projectUrl: webUrlCtrl.text,
+      armUrl: armUrlCtrl.text,
+      connectionName: connectionNameCtrl.text,
+      caption: connectionCaptionCtrl.text,
+      existingProject: editingProject.value,
+    );
+  }
+
+  String _normalizeProjectUrl(String value) {
+    final trimmed = value.trim();
+    return RegExp(r'^https?://', caseSensitive: false).hasMatch(trimmed)
+        ? trimmed
+        : 'https://$trimmed';
+  }
+
+  Future<bool> _saveProjectConnection({
+    required String projectUrl,
+    required String armUrl,
+    required String connectionName,
+    required String caption,
+    ProjectModel? existingProject,
+  }) async {
+    if (isProjectSaving.value) return false;
     projectSavingStarted();
-    final rawUrl = webUrlCtrl.text.trim();
-    final rawArmUrl = armUrlCtrl.text.trim();
-    final name = connectionNameCtrl.text.trim();
-    final caption = connectionCaptionCtrl.text.trim();
+    try {
+      final name = connectionName.trim();
+      final trimmedCaption = caption.trim();
+      final validationError =
+          validateUrl(projectUrl) ??
+          (validateUrl(armUrl) != null
+              ? 'Please enter a valid ARM URL.'
+              : null) ??
+          validateNormalField(name, false) ??
+          validateNormalField(trimmedCaption, true);
+      if (validationError != null) {
+        _showErrorSnackbar(validationError);
+        HapticManager.warning();
+        return false;
+      }
 
-    // Auto-add https if missing
-    String url = rawUrl;
-    String armurl = rawArmUrl;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://$url';
-      // webUrlCtrl.text = url; // reflect in field
-    }
-    if (!armurl.startsWith('http://') && !armurl.startsWith('https://')) {
-      armurl = 'https://$armurl';
-      // webUrlCtrl.text = url; // reflect in field
-    }
-    // debugPrint(rawArmUrl);
-    // debugPrint(rawArmUrl);
-    // // Upgrade http → https
-    // if (url.startsWith('http://')) {
-    //   url = url.replaceFirst('http://', 'https://');
-    //   // webUrlCtrl.text = url;
-    // }
-
-    // URI parse check
-    final uri = Uri.tryParse(url);
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-      _showErrorSnackbar('Please enter a valid URL.');
-      HapticManager.warning();
-      projectSavingStopped();
-      return;
-    }
-    final armuri = Uri.tryParse(armurl);
-    if (armuri == null || !armuri.hasScheme || !armuri.hasAuthority) {
-      _showErrorSnackbar('Please enter a valid ARM URL.');
-      HapticManager.warning();
-      projectSavingStopped();
-
-      return;
-    }
-
-    DuplicateReason dReason = await ProjectDatabase.instance.checkDuplicate(
-      url: url,
-      armurl: armurl,
-      schemaName: name,
-      caption: caption,
-      excludeId: editingProject.value?.id,
-    );
-
-    if (dReason != DuplicateReason.none) {
-      _showErrorSnackbar(_getDuplicateReason(dReason));
-      projectSavingStopped();
-      return;
-    }
-
-    updateSavingInfoText("Validating ARM");
-    var isProjectValid = await _checkArmStatus(armUrl: armurl);
-    if (!isProjectValid) {
-      projectSavingStopped();
-      // currentTileState.value = ProjectAddingState.defaultState;
-      // editingProject.value = null;
-
-      return;
-    }
-
-    ///TODO uncomment on prod
-    updateSavingInfoText("Validating Connection");
-    var isConnectionValid = await _validateConnectionName(
-      baseUrl: armurl,
-      appName: name,
-    );
-    if (!isConnectionValid) {
-      projectSavingStopped();
-      // currentTileState.value = ProjectAddingState.defaultState;
-      // editingProject.value = null;
-      return;
-    }
-
-    updateSavingInfoText("Fetching project details");
-    var logoUrl = await getLogoUrl(webUrl: url, projectName: name);
-    final logocolor = logoUrl.isNotEmpty
-        ? await extractLogoColorHex(logoUrl)
-        : '';
-
-    if (editingProject.value != null) {
-      // ── Update existing ──────────────────────────────────────────
-      await _updateProject(
-        editingProject.value!.copyWith(
-          color: logocolor,
-          logourl: logoUrl,
-          url: url,
-          armurl: armurl,
-          schemaName: name,
-          caption: caption,
-        ),
+      final url = _normalizeProjectUrl(projectUrl);
+      final arm = _normalizeProjectUrl(armUrl);
+      final duplicate = await ProjectDatabase.instance.checkDuplicate(
+        url: url,
+        armurl: arm,
+        schemaName: name,
+        caption: trimmedCaption,
+        excludeId: existingProject?.id,
       );
-    } else {
-      // ── Add new ──────────────────────────────────────────────────
-      await _addProject(
-        ProjectModel(
-          color: logocolor,
-          logourl: logoUrl,
-          url: url,
-          armurl: armurl,
-          schemaName: name,
-          caption: caption,
-        ),
-      );
-    }
+      if (duplicate != DuplicateReason.none) {
+        _showErrorSnackbar(_getDuplicateReason(duplicate));
+        return false;
+      }
 
-    projectSavingStopped();
+      updateSavingInfoText('Validating ARM');
+      if (!await _checkArmStatus(armUrl: arm)) return false;
+
+      updateSavingInfoText('Validating Connection');
+      if (!await _validateConnectionName(baseUrl: arm, appName: name)) {
+        return false;
+      }
+
+      updateSavingInfoText('Fetching project details');
+      final logoUrl = await getLogoUrl(webUrl: url, projectName: name);
+      final logoColor = logoUrl.isEmpty
+          ? ''
+          : await extractLogoColorHex(logoUrl);
+      final project = ProjectModel(
+        id: existingProject?.id,
+        color: logoColor,
+        logourl: logoUrl,
+        url: url,
+        armurl: arm,
+        schemaName: name,
+        caption: trimmedCaption,
+      );
+
+      if (existingProject != null) return await _updateProject(project);
+      return await _addProject(project);
+    } catch (error) {
+      log(
+        'Project setup failed: ${error.runtimeType}',
+        name: 'ProjectController',
+      );
+      _showErrorSnackbar('Could not save the connection. Please try again.');
+      HapticManager.error();
+      return false;
+    } finally {
+      projectSavingStopped();
+    }
   }
 
   // ── Update DB + list ──────────────────────────────────────────────
-  Future<void> _updateProject(ProjectModel project) async {
+  Future<bool> _updateProject(ProjectModel project) async {
     final result = await ProjectDatabase.instance.update(project);
     switch (result) {
       case DbSuccess(:final data):
@@ -715,9 +585,11 @@ class ProjectController extends GetxController
         _goToDefault();
         _showSuccessSnackbar('${data.schemaName} updated successfully.');
         HapticManager.success();
+        return true;
       case DbError(:final message):
         _showErrorSnackbar(message);
         HapticManager.error();
+        return false;
     }
   }
 
@@ -762,7 +634,7 @@ class ProjectController extends GetxController
     }
   }
 
-  Future<void> _addProject(ProjectModel project) async {
+  Future<bool> _addProject(ProjectModel project) async {
     final result = await ProjectDatabase.instance.add(project);
     switch (result) {
       case DbSuccess(:final data):
@@ -774,16 +646,18 @@ class ProjectController extends GetxController
         _goToDefault();
         _showSuccessSnackbar("${data.schemaName} added successfully.");
         HapticManager.success();
+        return true;
       case DbError(:final message):
         _showErrorSnackbar(message);
         HapticManager.error();
+        return false;
     }
   }
 
   Future<bool> _checkArmStatus({required String armUrl}) async {
-    ApiResult result = await ApiManager.instance.checkArmStatus(armUrl);
+    final result = await checkArmStatus(armUrl);
 
-    if (result is ApiError) {
+    if (result is ApiError<bool>) {
       _showErrorSnackbar("ARM Status Failed\n${result.message}");
       return false;
     } else {
@@ -791,20 +665,114 @@ class ProjectController extends GetxController
     }
   }
 
+  static Future<ApiResult<bool>> checkArmStatus(String armUrl) async {
+    final base = armUrl.endsWith('/') ? armUrl : '$armUrl/';
+    try {
+      final response = await ApiManager.instance.getFromServer(
+        Uri.parse('$base${ApiEndpoints.API_GET_APPSTATUS}'),
+      );
+      switch (response) {
+        case ApiError<String>(:final message):
+          return ApiError(message);
+        case ApiSuccess<String>(:final data):
+          final decoded = _decodeProjectResponse(data);
+          if (decoded is! Map<String, dynamic>) {
+            return ApiError('Invalid response from server.');
+          }
+          if (decoded.toString().toLowerCase().contains(
+            'running successfully',
+          )) {
+            return ApiSuccess(true);
+          }
+          return ApiError(
+            'Server reached, but application is not running successfully.',
+          );
+      }
+    } on FormatException {
+      return ApiError('Invalid response from server.');
+    }
+  }
+
   Future<bool> _validateConnectionName({
     required String baseUrl,
     required String appName,
   }) async {
-    ApiResult result = await ApiManager.instance.validateConnectionName(
+    final result = await validateConnectionName(
       baseUrl: baseUrl,
       appName: appName,
     );
-    if (result is ApiError) {
+    if (result is ApiError<bool>) {
       _showErrorSnackbar("Connection Name Failed\n${result.message}");
       return false;
     } else {
       return true;
     }
+  }
+
+  /// Validates the project response for both QR and manual setup.
+  static Future<ApiResult<bool>> validateConnectionName({
+    required String baseUrl,
+    required String appName,
+  }) async {
+    final base = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
+    try {
+      final url = Uri.parse(
+        '${base}${ApiEndpoints.API_VALIDATE_APP_SETTINGS}',
+      ).replace(queryParameters: {'appname': appName});
+      final response = await ApiManager.instance.getFromServer(url);
+      switch (response) {
+        case ApiError<String>(:final message):
+          return ApiError(message);
+        case ApiSuccess<String>(:final data):
+          return _parseConnectionValidation(data, appName);
+      }
+    } on FormatException {
+      return ApiError('Invalid connection validation response from server.');
+    }
+  }
+
+  static dynamic _decodeProjectResponse(String body) {
+    final data = jsonDecode(body);
+    return data is String ? jsonDecode(data) : data;
+  }
+
+  static ApiResult<bool> _parseConnectionValidation(
+    String body,
+    String appName,
+  ) {
+    final data = _decodeProjectResponse(body);
+    final result = data is Map<String, dynamic> ? data['result'] : null;
+    if (result is! Map<String, dynamic> || result['success'] is! bool) {
+      return ApiError('Invalid connection validation response from server.');
+    }
+
+    final errors = result['errors'];
+    if (result.containsKey('errors') && errors is! List) {
+      return ApiError('Invalid connection validation response from server.');
+    }
+    final messages = errors is List
+        ? errors.whereType<String>().map((e) => e.trim().toLowerCase()).toSet()
+        : const <String>{};
+    // The endpoint also reports unrelated server settings, such as MobileSettings.
+    final missingSections = [
+      for (final section in ['appconnections', 'appsettings'])
+        if (messages.contains(
+          "Project '$appName' is missing in $section node in appsettings.ini"
+              .toLowerCase(),
+        ))
+          section,
+    ];
+    if (missingSections.isNotEmpty) {
+      final sectionLabel = missingSections.length == 1 ? 'section' : 'sections';
+      return ApiError(
+        "Connection name '$appName' was not found in the server's "
+        '${missingSections.join(' and ')} $sectionLabel.',
+      );
+    }
+    if (result['success'] != true) {
+      return ApiError('Could not validate the connection name.');
+    }
+    return ApiSuccess(true);
   }
 
   // static Future<String> getLogoUrl({

@@ -19,6 +19,7 @@ class AppScaffold extends StatelessWidget {
   final bool extendBody;
   final bool extendBodyBehindAppBar;
   final bool safeArea;
+  final bool? systemNavigationBarContrastEnforced;
 
   final EdgeInsetsGeometry padding;
   final String? bgIMage;
@@ -38,6 +39,7 @@ class AppScaffold extends StatelessWidget {
     this.extendBody = true,
     this.extendBodyBehindAppBar = true,
     this.safeArea = false,
+    this.systemNavigationBarContrastEnforced,
     this.padding = EdgeInsetsGeometry.zero,
     this.bgIMage,
   });
@@ -57,6 +59,8 @@ class AppScaffold extends StatelessWidget {
         systemNavigationBarColor: Colors.transparent,
 
         systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarContrastEnforced:
+            systemNavigationBarContrastEnforced,
 
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light

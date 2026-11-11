@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:developer';
 
 import 'package:axpert/app/controller/global_controller.dart';
@@ -16,6 +17,37 @@ import '../offline_form_pages/auto_sync/sync.dart';
 
 const double _kTopBarHeight = 64.0;
 const double _kBottomBarHeight = 64.0;
+
+// Flutter's SafeArea already keeps this WebView above the system buttons.
+// Keep the Axpert footer's normal 6px spacing without its second Android inset.
+const _androidAxpertFooterStyle = '''
+(() => {
+  const id = 'axpert-native-footer-inset';
+  const selector = '#mainNewPageBody.isHybrid .AXI-Sec';
+  const apply = () => {
+    if (document.getElementById(id)) return;
+    const footer = [...document.querySelectorAll(selector)].find(
+        element => getComputedStyle(element).position === 'fixed');
+    if (!footer) return;
+    const probe = document.createElement('div');
+    probe.style.cssText =
+        'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom, 0px)';
+    document.body.appendChild(probe);
+    const inset = parseFloat(getComputedStyle(probe).paddingBottom);
+    probe.remove();
+    const padding = parseFloat(getComputedStyle(footer).paddingBottom);
+    if (!(inset > 0 && Math.abs(padding - inset - 6) < 1)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = selector + ' { padding-bottom: 6px !important; }';
+    document.head?.appendChild(style);
+  };
+  apply();
+  if (document.readyState !== 'complete') {
+    window.addEventListener('load', apply, { once: true });
+  }
+})()
+''';
 
 class WebviewView extends GetView<WebViewController> {
   const WebviewView({super.key});
@@ -36,6 +68,8 @@ class WebviewView extends GetView<WebViewController> {
         await controller.performBackButtonClick();
       },
       child: AppScaffold(
+        extendBody: false,
+        systemNavigationBarContrastEnforced: true,
         // backgroundColor: AppColors.white,
         body: SafeArea(
           child: Column(
@@ -132,6 +166,16 @@ class WebviewView extends GetView<WebViewController> {
                     //   },
                     // ),
                     InAppWebView(
+                      initialUserScripts: GetPlatform.isAndroid
+                          ? UnmodifiableListView([
+                              UserScript(
+                                source: _androidAxpertFooterStyle,
+                                injectionTime:
+                                    UserScriptInjectionTime.AT_DOCUMENT_END,
+                                forMainFrameOnly: true,
+                              ),
+                            ])
+                          : null,
                       // initialUrlRequest: URLRequest(
                       //   url: WebUri(controller.currentUrl.value),
                       // ),

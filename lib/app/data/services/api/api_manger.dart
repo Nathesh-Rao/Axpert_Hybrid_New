@@ -102,6 +102,7 @@ import 'package:axpert/app/data/models/auth_user_details_model.dart';
 import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart';
@@ -179,25 +180,6 @@ class ApiManager {
     return headers;
   }
 
-  Future<Map<String, dynamic>> _getFromServer(
-    String url, {
-    bool isBearer = false,
-    Map<String, String>? extraHeaders,
-  }) async {
-    debugPrint(url);
-    final headers = _buildHeaders(
-      isBearer: isBearer,
-      extraHeaders: extraHeaders,
-    );
-
-    final response = await http
-        .get(Uri.parse(url), headers: headers)
-        .timeout(_timeout);
-
-    debugPrint(response.body);
-    return _handleResponse(response);
-  }
-
   Future<Map<String, dynamic>> _postToServer(
     String url, {
     required String body,
@@ -209,15 +191,42 @@ class ApiManager {
       extraHeaders: extraHeaders,
     );
 
-    final response = await http
-        .post(Uri.parse(url), headers: headers, body: body)
-        .timeout(_timeout);
+    final uri = Uri.parse(url);
+    final http.Response response;
+    try {
+      response = await http
+          .post(uri, headers: headers, body: body)
+          .timeout(_timeout);
+    } catch (error) {
+      if (kDebugMode) {
+        _debugPostTrace(uri, body, failure: error.runtimeType);
+      }
+      rethrow;
+    }
+    if (kDebugMode) {
+      _debugPostTrace(uri, body, response: response);
+    }
 
     return _handleResponse(response);
   }
 
+  void _debugPostTrace(
+    Uri uri,
+    String body, {
+    http.Response? response,
+    Type? failure,
+  }) {
+    debugPrint(
+      'API REQUEST / RESPONSE\n'
+      'METHOD   : POST\n'
+      'URL      : $uri\n'
+      'BODY     : $body\n'
+      'STATUS   : ${response?.statusCode ?? 'No response'}\n'
+      'RESULT   : ${response == null ? failure : response.body}',
+    );
+  }
+
   Map<String, dynamic> _handleResponse(http.Response response) {
-    log(response.body);
     if (response.statusCode == 200) {
       var decoded = jsonDecode(response.body);
       if (decoded is String) {
@@ -284,68 +293,29 @@ class ApiManager {
     }
   }
 
-  Future<ApiResult<bool>> checkArmStatus(String baseUrl) async {
-    baseUrl += baseUrl.endsWith("/") ? "" : "/";
-    try {
-      final data = await _getFromServer(
-        baseUrl + ApiEndpoints.API_GET_APPSTATUS,
-      );
-      log(data.toString());
-      final dataString = data.toString().toLowerCase();
-
-      if (dataString.isNotEmpty &&
-          dataString.contains("running successfully")) {
-        return ApiSuccess(true);
-      } else {
-        return ApiError(
-          'Server reached, but application is not running successfully.',
-        );
-      }
-    } on _ApiException catch (e) {
-      return ApiError(e.message);
-    } on TimeoutException {
-      return ApiError('Request timed out. Please try again.');
-    } on http.ClientException {
-      return ApiError('Network error. Please check your connection.');
-    } on FormatException {
-      return ApiError('Invalid response from server.');
-    } catch (e) {
-      return ApiError('Something went wrong: $e');
-    }
-  }
-
-  Future<ApiResult<bool>> validateConnectionName({
-    required String baseUrl,
-    required String appName,
+  /// Handles HTTP outcomes without interpreting the response body.
+  Future<ApiResult<String>> getFromServer(
+    Uri url, {
+    bool isBearer = false,
+    Map<String, String>? extraHeaders,
   }) async {
-    baseUrl += baseUrl.endsWith("/") ? "" : "/";
-    final url = baseUrl + ApiEndpoints.API_GET_SIGNINDETAILS;
-    final body = jsonEncode({"appname": appName});
-
     try {
-      final data = await _postToServer(url, body: body);
-      log(data.toString());
-      final resultObj = data["result"] as Map<String, dynamic>?;
-      final message = resultObj?["message"]?.toString().toLowerCase() ?? "";
-      final dataObj = resultObj?["data"] as Map<String, dynamic>?;
-      final value = dataObj?["Value"];
-
-      if (message == "success" && value is! String) {
-        return ApiSuccess(true);
-      } else {
-        final errorMessage = value?.toString() ?? "Invalid connection name.";
-        return ApiError(errorMessage);
+      final headers = _buildHeaders(
+        isBearer: isBearer,
+        extraHeaders: extraHeaders,
+      );
+      final response = await http.get(url, headers: headers).timeout(_timeout);
+      if (response.statusCode == 200) return ApiSuccess(response.body);
+      if (response.statusCode == 404) {
+        return ApiError('Invalid URL. Please check your server address.');
       }
-    } on _ApiException catch (e) {
-      return ApiError(e.message);
+      return ApiError('Server request failed (HTTP ${response.statusCode}).');
     } on TimeoutException {
       return ApiError('Request timed out. Please try again.');
     } on http.ClientException {
       return ApiError('Network error. Please check your connection.');
-    } on FormatException {
-      return ApiError('Invalid response from server.');
-    } catch (e) {
-      return ApiError('Something went wrong: $e');
+    } catch (_) {
+      return ApiError('Could not complete the server request.');
     }
   }
 

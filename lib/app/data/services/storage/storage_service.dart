@@ -25,6 +25,7 @@ class StorageService {
   static const _keyRememberedPasswords = 'remembered_passwords';
   static const _keyRememberedGroups = 'remembered_groups';
   static const _keyCanAuthenticate = 'can_authenticate';
+  static const _keyBiometricLogin = 'biometric_login_by_connection';
   static const _keyWillAuthenticateForUser = 'will_authenticate_for_user';
   static const _autoSync = 'auto_sync';
   static const _autoSyncMaster = '_auto_sync_master';
@@ -225,6 +226,61 @@ class StorageService {
 
   static Future<void> setCanAuthenticate(bool value) async {
     await _prefs.setBool(_keyCanAuthenticate, value);
+  }
+
+  static bool get canAuthenticate =>
+      _prefs.getBool(_keyCanAuthenticate) ?? false;
+
+  // Include the server addresses so same-named projects cannot share credentials.
+  static String connectionLoginKey(ProjectModel project) => jsonEncode([
+    project.id,
+    project.schemaName.trim(),
+    project.url.trim(),
+    project.armurl.trim(),
+  ]);
+
+  static Map<String, dynamic>? lastBiometricLogin(ProjectModel project) {
+    final data = _getMap(_keyBiometricLogin)[connectionLoginKey(project)];
+    return data is Map ? Map<String, dynamic>.from(data) : null;
+  }
+
+  static Future<void> saveCompletedBiometricLogin({
+    required ProjectModel project,
+    required String username,
+    required String passwordHash,
+    required bool remember,
+  }) async {
+    final entries = _getMap(_keyBiometricLogin);
+    final key = connectionLoginKey(project);
+    final previous = entries[key];
+    final canSave = remember && passwordHash.isNotEmpty;
+    entries[key] = {
+      'username': username,
+      'password': canSave ? passwordHash : '',
+      'enrolled':
+          canSave &&
+          previous is Map &&
+          previous['username'] == username &&
+          previous['enrolled'] == true,
+    };
+    await _prefs.setString(_keyBiometricLogin, jsonEncode(entries));
+  }
+
+  static Future<bool> enrollLastBiometricLogin(
+    ProjectModel project,
+    String username,
+  ) async {
+    final entries = _getMap(_keyBiometricLogin);
+    final key = connectionLoginKey(project);
+    final login = entries[key];
+    if (!canAuthenticate ||
+        login is! Map<String, dynamic> ||
+        login['username'] != username ||
+        (login['password']?.toString().isEmpty ?? true)) {
+      return false;
+    }
+    entries[key] = {...login, 'enrolled': true};
+    return _prefs.setString(_keyBiometricLogin, jsonEncode(entries));
   }
 
   static Future<void> setWillBiometricAuthenticateForThisUser({

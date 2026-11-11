@@ -6,6 +6,7 @@ import 'dart:developer';
 
 import 'package:axpert/app/core/common.dart';
 import 'package:axpert/app/widgets/project_logo.dart';
+import 'package:axpert/app/widgets/connection_style.dart';
 import 'package:axpert/app/core/common/methods.dart';
 import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/enums/auth_enums.dart';
@@ -23,6 +24,14 @@ import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 
 import '../../offline_form_pages/db/db.dart';
+
+typedef _LoginAttempt = ({
+  ProjectModel project,
+  String username,
+  String passwordHash,
+  String rememberedPassword,
+  bool remember,
+});
 
 class AuthController extends GetxController {
   Rxn<ProjectModel> selectedProject = Rxn<ProjectModel>();
@@ -56,9 +65,9 @@ class AuthController extends GetxController {
   var otpMsg = ''.obs;
   var otpLoginKey = ''.obs;
   var otpErrorText = ''.obs;
-  bool isDuplicate_session = false;
   bool isAxpertConnectEstablished = false;
   bool _isAuthFromBiometric = false;
+  _LoginAttempt? _pendingOtpLogin;
   final projects = <ProjectModel>[].obs;
   TextEditingController oPassCtrl = TextEditingController();
   TextEditingController nPassCtrl = TextEditingController();
@@ -80,6 +89,8 @@ class AuthController extends GetxController {
   }
 
   void projectChanged(int p1) async {
+    biometricInputChanged();
+    _rememberedBiometricUser = null;
     await StorageService.saveLastSelectedProject(p1);
     onLoad();
   }
@@ -105,21 +116,31 @@ class AuthController extends GetxController {
   }
 
   Future<void> refreshCurrentProject() async {
+    biometricInputChanged();
+    final refresh = _biometricCheck;
     isOTP_auth.value = false;
     isPWD_auth.value = false;
     authType.value = AuthType.none;
-    selectedProject.value = await StorageService.getLastSelectedProject();
+    final project = await StorageService.getLastSelectedProject();
+    if (isClosed || refresh != _biometricCheck) return;
+    selectedProject.value = project;
     currentProjectName.value = selectedProject.value?.schemaName ?? '';
     selectedColor.value = AppColors.colorFromHex(
       selectedProject.value?.color ?? '',
     );
 
-    var userName = StorageService.getRememberedUser(currentProjectName.value);
+    final connection = project == null
+        ? ''
+        : StorageService.connectionLoginKey(project);
+    if (project != null) await _migrateConfirmedBiometricLogin(project);
+    if (isClosed || refresh != _biometricCheck) return;
+    final userName = StorageService.getRememberedUser(connection);
+    _rememberedBiometricUser = userName;
     if (userName != null) {
       rememberMe.value = true;
       userNameController.text = userName;
       userPasswordController.text =
-          StorageService.getRememberedPassword(currentProjectName.value) ?? '';
+          StorageService.getRememberedPassword(connection) ?? '';
 
       await setWillAuthenticate();
     } else {
@@ -129,68 +150,156 @@ class AuthController extends GetxController {
     }
   }
 
+  Future<void> _migrateConfirmedBiometricLogin(ProjectModel project) async {
+    // The legacy keys used only the project name. Reuse an enrollment only
+    // when the saved session and remembered credentials prove its scope.
+    if (StorageService.lastBiometricLogin(project) != null ||
+        StorageService.projectName != project.schemaName ||
+        StorageService.webUrl != project.url ||
+        StorageService.armUrl != project.armurl) {
+      return;
+    }
+    final name = project.schemaName;
+    final user = StorageService.getRememberedUser(name);
+    final password = StorageService.getRememberedPassword(name);
+    if (user == null ||
+        user.isEmpty ||
+        user != StorageService.userName ||
+        password == null ||
+        password.trim().isEmpty ||
+        StorageService.getWillBiometricAuthenticateForThisUser(
+              projectName: name,
+              username: user,
+            ) !=
+            true) {
+      return;
+    }
+    final hash = generateMd5(AppConst.SEED + generateMd5(password.trim()));
+    final legacyLogin = StorageService.retrieveLastLoginData(name);
+    if (legacyLogin?['username'] != user || legacyLogin?['password'] != hash) {
+      return;
+    }
+    await StorageService.rememberCredentialsForProject(
+      projectName: StorageService.connectionLoginKey(project),
+      username: user,
+      password: password,
+      group: ddSelectedValue.value,
+    );
+    await StorageService.saveCompletedBiometricLogin(
+      project: project,
+      username: user,
+      passwordHash: hash,
+      remember: true,
+    );
+    await StorageService.enrollLastBiometricLogin(project, user);
+  }
+
   var isBiometricLoading = false.obs;
+  int _biometricCheck = 0;
+  bool _biometricPromptOpen = false;
+  Map<String, dynamic>? _verifiedBiometricLogin;
+  String? _verifiedBiometricConnection;
+  String? _rememberedBiometricUser;
 
-  Future<void> setWillAuthenticate() async {
-    isBiometricLoading.value = true;
-    await checkBiometricFlag();
+  void biometricInputChanged() {
+    _biometricCheck++;
     isBiometricLoading.value = false;
-
-    var willAuth = StorageService.getWillBiometricAuthenticateForThisUser(
-      projectName: selectedProject.value?.schemaName.trim() ?? '',
-      username: userNameController.text.toString().trim(),
-    );
-    print(("Login willAuth: $willAuth"));
-    // LogService.writeLog(
-    //     message:
-    //         "[i] LoginController\nScope: setWillAuthenticate()\nLogin willAuth: $willAuth");
-
-    if (willAuth != null) {
-      willBio_userAuthenticate.value = willAuth;
-    }
-    if (isBiometricAvailable.value) displayAuthenticationDialog();
+    isBiometricAvailable.value = false;
+    willBio_userAuthenticate.value = false;
   }
 
-  void displayAuthenticationDialog() async {
-    if (willBio_userAuthenticate.value) {
-      try {
-        if (await CommonMethods.showBiometricDialog()) {
-          _isAuthFromBiometric = true;
-          await startLoginProcess();
-          // loginButtonClicked(bodyArgs: retrieveLastLoginData());
-        }
-      } catch (e) {
-        print(e.toString());
-        if (e.toString().contains('NotAvailable') &&
-            e.toString().contains('Authentication failure')) {
-          error(" Oops Only Biometric is allowed.");
-        }
-      } finally {
-        _isAuthFromBiometric = false;
-      }
+  void biometricLoginInputEdited() {
+    if (rememberMe.value &&
+        _rememberedBiometricUser == userNameController.text.trim()) {
+      unawaited(setWillAuthenticate(autoPrompt: false));
     } else {
-      print("willAuthenticate => $willBio_userAuthenticate");
+      biometricInputChanged();
     }
   }
 
-  Future<void> checkBiometricFlag() async {
-    final baseUrl = selectedProject.value?.armurl.trim() ?? '';
-    final appName = selectedProject.value?.schemaName.trim() ?? '';
-
-    final result = await ApiManager.instance.checkBiometricFlag(
-      baseUrl: baseUrl,
-      appName: appName,
+  Map<String, dynamic>? _eligibleBiometricLogin(ProjectModel project) {
+    if (!rememberMe.value || !StorageService.canAuthenticate) return null;
+    final login = StorageService.lastBiometricLogin(project);
+    final remembered = StorageService.getRememberedUser(
+      StorageService.connectionLoginKey(project),
     );
+    if (login?['enrolled'] != true ||
+        remembered != login?['username'] ||
+        login?['username'] != userNameController.text.trim() ||
+        (login?['password']?.toString().isEmpty ?? true)) {
+      return null;
+    }
+    return login;
+  }
 
-    switch (result) {
-      case ApiSuccess(data: final isEnabled):
-        isBiometricAvailable.value = isEnabled;
-        debugPrint("User Biometric info (enabled): $isEnabled");
-        break;
-      case ApiError(message: final errorMsg):
-        isBiometricAvailable.value = false;
-        debugPrint("Failed to check biometric flag: $errorMsg");
-        break;
+  Future<void> setWillAuthenticate({bool autoPrompt = true}) async {
+    biometricInputChanged();
+    final project = selectedProject.value;
+    if (project == null || _eligibleBiometricLogin(project) == null) return;
+    final check = _biometricCheck;
+    isBiometricLoading.value = true;
+    final result = await ApiManager.instance.checkBiometricFlag(
+      baseUrl: project.armurl.trim(),
+      appName: project.schemaName.trim(),
+    );
+    if (isClosed || check != _biometricCheck) return;
+    isBiometricLoading.value = false;
+    final currentProject = selectedProject.value;
+    if (currentProject == null ||
+        StorageService.connectionLoginKey(currentProject) !=
+            StorageService.connectionLoginKey(project)) {
+      return;
+    }
+    final enabled = result is ApiSuccess<bool> && result.data;
+    isBiometricAvailable.value = enabled;
+    willBio_userAuthenticate.value =
+        enabled && _eligibleBiometricLogin(project) != null;
+    if (autoPrompt && willBio_userAuthenticate.value) {
+      unawaited(displayAuthenticationDialog());
+    }
+  }
+
+  Future<void> displayAuthenticationDialog() async {
+    final project = selectedProject.value;
+    if (project == null ||
+        _biometricPromptOpen ||
+        _isAuthFromBiometric ||
+        isSigninApiCalling.value ||
+        isUserDataLoading.value ||
+        !isBiometricAvailable.value ||
+        !willBio_userAuthenticate.value) {
+      return;
+    }
+    final login = _eligibleBiometricLogin(project);
+    if (login == null) return;
+    final check = _biometricCheck;
+    _biometricPromptOpen = true;
+    try {
+      if (!await CommonMethods.showBiometricDialog() ||
+          isClosed ||
+          check != _biometricCheck ||
+          selectedProject.value != project) {
+        return;
+      }
+      final current = _eligibleBiometricLogin(project);
+      if (current?['username'] != login['username'] ||
+          current?['password'] != login['password']) {
+        return;
+      }
+      _verifiedBiometricLogin = login;
+      _verifiedBiometricConnection = StorageService.connectionLoginKey(project);
+      _isAuthFromBiometric = true;
+      await startLoginProcess();
+    } catch (error) {
+      log(
+        'Biometric sign-in failed: ${error.runtimeType}',
+        name: 'AuthController',
+      );
+    } finally {
+      _isAuthFromBiometric = false;
+      _verifiedBiometricLogin = null;
+      _verifiedBiometricConnection = null;
+      _biometricPromptOpen = false;
     }
   }
 
@@ -260,29 +369,10 @@ class AuthController extends GetxController {
     isUserDataLoading.value = true;
     FocusManager.instance.primaryFocus?.unfocus();
 
-    // 1. Gather data for the request
-    // Note: Assuming you have a way to pass the base ARM url here.
-    // If AppConst.getFullARMUrl simply gives the full string, you can adjust the ApiManager slightly.
-
-    var projectName = selectedProject.value?.schemaName ?? '';
-    // 1. Retrieve the data
-    final lastData = StorageService.retrieveLastLoginData(projectName);
-
-    // 2. Extract values safely first (this avoids the ternary '?' syntax crash)
-    final savedUsername = lastData?["username"]?.toString() ?? "";
-    // final savedPassword = lastData?["password"]?.toString() ?? "";
-
-    // 3. Now assign them cleanly
-    var username = _isAuthFromBiometric
-        ? savedUsername
-        : userNameController.text.toString().trim();
-
-    // var password = _isAuthFromBiometric
-    //     ? savedPassword
-    //     : generateMd5(
-    //         AppConst.SEED +
-    //             generateMd5(userPasswordController.text.toString().trim()),
-    //       );
+    final projectName = selectedProject.value?.schemaName ?? '';
+    final username =
+        _verifiedBiometricLogin?['username']?.toString() ??
+        userNameController.text.trim();
     // 2. Call the new ApiManager method
     final result = await ApiManager.instance.getLoginUserDetails(
       projectName: projectName,
@@ -341,50 +431,64 @@ class AuthController extends GetxController {
   }
 
   Future<void> callSignInAPI() async {
-    if (!validateForm()) return;
-
-    FocusManager.instance.primaryFocus?.unfocus();
-    // LoadingScreen.show();
-    _startLogin();
-
-    // 1. Build the request body
-    var projectName = selectedProject.value?.schemaName ?? '';
-    // 1. Retrieve the data
-    final lastData = StorageService.retrieveLastLoginData(projectName);
-
-    // 2. Extract values safely first (this avoids the ternary '?' syntax crash)
-    final savedUsername = lastData?["username"]?.toString() ?? "";
-    final savedPassword = lastData?["password"]?.toString() ?? "";
-    log(
-      "savedUsername: $savedUsername, savedPassword: $savedPassword",
-      name: "callSignInAPI",
+    if (isSigninApiCalling.value || !validateForm()) return;
+    final project = selectedProject.value;
+    if (project == null) return;
+    if (_isAuthFromBiometric &&
+        (_verifiedBiometricConnection !=
+                StorageService.connectionLoginKey(project) ||
+            _eligibleBiometricLogin(project)?['username'] !=
+                _verifiedBiometricLogin?['username'])) {
+      return;
+    }
+    final username =
+        _verifiedBiometricLogin?['username']?.toString() ??
+        userNameController.text.trim();
+    final rawPassword = userPasswordController.text.trim();
+    final password =
+        _verifiedBiometricLogin?['password']?.toString() ??
+        generateMd5(AppConst.SEED + generateMd5(rawPassword));
+    final _LoginAttempt attempt = (
+      project: project,
+      username: username,
+      passwordHash: rawPassword.isNotEmpty || _isAuthFromBiometric
+          ? password
+          : '',
+      rememberedPassword: userPasswordController.text,
+      remember: rememberMe.value,
     );
-    // 3. Now assign them cleanly
-    var username = _isAuthFromBiometric
-        ? savedUsername
-        : userNameController.text.toString().trim();
+    await _submitSignIn(attempt, password: password, useOtp: isOTP_auth.value);
+  }
 
-    var password = _isAuthFromBiometric
-        ? savedPassword
-        : generateMd5(
-            AppConst.SEED +
-                generateMd5(userPasswordController.text.toString().trim()),
-          );
-
+  Future<void> _submitSignIn(
+    _LoginAttempt attempt, {
+    required String password,
+    required bool useOtp,
+    bool clearPreviousSession = false,
+  }) async {
+    if (isClosed || isSigninApiCalling.value) return;
+    _pendingOtpLogin = null;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _startLogin();
+    final project = attempt.project;
+    final username = attempt.username;
     var signInBody = {
-      "appname": projectName,
+      "appname": project.schemaName,
       "username": username,
       "Seed": AppConst.SEED,
       "password": password,
       "Language": "English",
       "SessionId": getGUID(),
       "Globalvars": false,
+      "ClearPreviousSession": clearPreviousSession,
+      if (useOtp) "OtpAuth": "T",
     };
     log(signInBody.toString(), name: "callSignInAPI body");
-    if (isDuplicate_session) signInBody["ClearPreviousSession"] = true;
-    if (isOTP_auth.value) signInBody["OtpAuth"] = "T";
 
-    var url = await AppConst.getFullARMUrl(ApiEndpoints.API_SIGNIN);
+    final armBase = project.armurl.trim();
+    final url = armBase.isEmpty
+        ? ApiEndpoints.API_SIGNIN
+        : '${armBase.endsWith('/') ? armBase : '$armBase/'}${ApiEndpoints.API_SIGNIN}';
 
     final result = await ApiManager.instance.signIn(url: url, body: signInBody);
 
@@ -394,21 +498,19 @@ class AuthController extends GetxController {
       case ApiSuccess(data: final response):
         log(response.rawData.toString(), name: "callSignInAPI");
         if (response.isSuccess) {
-          StorageService.storeLastLoginData(projectName, signInBody);
-
           if (response.message == "Login Successful.") {
-            // showDialog_changePassword();
             StorageService.saveUserRole(
               response.rawData["role"].toString().toLowerCase(),
             );
             await OfflineDbModule.saveUser(
-              projectName: currentProjectName.value,
-              username: userNameController.text.toString().trim(),
-              passwordHash: userPasswordController.text.toString().trim(),
+              projectName: project.schemaName,
+              username: username,
+              passwordHash: attempt.rememberedPassword.trim(),
               loginResult: response.rawData,
             );
-            await processSignInDataResponse(projectName, response.rawData);
+            await _completeSignIn(attempt, response.rawData);
           } else if (response.otpLoginKey != null) {
+            _pendingOtpLogin = attempt;
             otpMsg.value = response.message;
             otpLoginKey.value = response.otpLoginKey!;
             debugPrint(
@@ -420,13 +522,17 @@ class AuthController extends GetxController {
         } else {
           // Backend processed the request but threw a business logic error
           if (response.isDuplicateSession) {
-            isDuplicate_session = true;
             showDialog_duplicateSession(
               message: response.message,
-              color: selectedColor.value,
+              onConfirm: () => _submitSignIn(
+                attempt,
+                password: password,
+                useOtp: useOtp,
+                clearPreviousSession: true,
+              ),
             );
           } else if (response.isChangePassword) {
-            showDialog_changePassword();
+            showDialog_changePassword(username: username);
           } else {
             if (Get.isDialogOpen ?? false) Get.back();
             Get.snackbar(
@@ -467,12 +573,13 @@ class AuthController extends GetxController {
     return md5.convert(utf8.encode(input)).toString();
   }
 
-  Future<void> processSignInDataResponse(
-    String projectname,
+  Future<void> _completeSignIn(
+    _LoginAttempt attempt,
     Map<String, dynamic> json, {
     bool isFromOtp = false,
   }) async {
-    final userName = userNameController.text.trim();
+    final projectname = attempt.project.schemaName;
+    final userName = attempt.username;
 
     final token = json["token"]?.toString() ?? "";
     final sessionId = json["ARMSessionId"]?.toString() ?? "";
@@ -481,8 +588,8 @@ class AuthController extends GetxController {
     await StorageService.cacheProjectDetails(
       projectName: projectname,
       userName: userName,
-      webUrl: selectedProject.value?.url ?? '',
-      armUrl: selectedProject.value?.armurl ?? '',
+      webUrl: attempt.project.url,
+      armUrl: attempt.project.armurl,
     );
     await StorageService.saveUserSession(
       token: token,
@@ -500,16 +607,24 @@ class AuthController extends GetxController {
     // );
 
     // 2. Handle Remember Me state
-    if (rememberMe.value) {
-      StorageService.rememberCredentialsForProject(
-        projectName: projectname,
-        username: userNameController.text.trim(),
-        password: userPasswordController.text,
+    final connection = StorageService.connectionLoginKey(attempt.project);
+    if (attempt.remember) {
+      await StorageService.rememberCredentialsForProject(
+        projectName: connection,
+        username: userName,
+        password: attempt.rememberedPassword,
         group: ddSelectedValue.value,
       );
     } else {
-      StorageService.forgetCredentialsForProject(projectname);
+      await StorageService.forgetCredentialsForProject(connection);
     }
+    _rememberedBiometricUser = attempt.remember ? userName : null;
+    await StorageService.saveCompletedBiometricLogin(
+      project: attempt.project,
+      username: userName,
+      passwordHash: attempt.passwordHash,
+      remember: attempt.remember,
+    );
 
     // 3. Navigate
     await _processLoginAndGoToHomePage(isFromOtp: isFromOtp);
@@ -546,6 +661,8 @@ class AuthController extends GetxController {
     } else {
       await Get.toNamed(Routes.WEBVIEW);
     }
+    // Let the completed sign-in release its busy state before prompting again.
+    if (!isClosed) unawaited(setWillAuthenticate());
   }
 
   Future<void> _callApiForMobileNotification() async {
@@ -594,12 +711,21 @@ class AuthController extends GetxController {
     }
   }
 
-  void showDialog_duplicateSession({required String message, Color? color}) {
+  void showDialog_duplicateSession({
+    required String message,
+    required Future<void> Function() onConfirm,
+  }) {
     // Make sure to close any existing dialogs first
     if (Get.isDialogOpen ?? false) Get.back();
 
+    final context = Get.context!;
+    const loginBlue = ConnectionStyle.navy;
+    final accentText = ConnectionStyle.dark(context)
+        ? const Color(0xff9DB6FF)
+        : loginBlue;
     Get.dialog(
       Dialog(
+        backgroundColor: ConnectionStyle.card(context),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -617,16 +743,17 @@ class AuthController extends GetxController {
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color:
-                      color ??
-                      AppColors.darkBlue, // Ensure MyColors is imported
+                  color: accentText,
                 ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
               Text(
                 message,
-                style: GoogleFonts.poppins(fontSize: 15, color: Colors.black87),
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  color: ConnectionStyle.ink(context),
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -636,12 +763,12 @@ class AuthController extends GetxController {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        foregroundColor: color ?? AppColors.darkBlue,
-                        backgroundColor: Colors.white,
+                        foregroundColor: accentText,
+                        backgroundColor: ConnectionStyle.card(context),
 
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: color ?? AppColors.darkBlue),
+                          side: BorderSide(color: accentText),
                         ),
                       ),
                       onPressed: () =>
@@ -651,21 +778,12 @@ class AuthController extends GetxController {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: color ?? AppColors.darkBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        Get.back(); // Close dialog first
-                        callSignInAPI(); // Then call API
+                    child: ConnectionButton(
+                      label: 'Yes',
+                      onPressed: () async {
+                        Get.back();
+                        await onConfirm();
                       },
-                      child: const Text("Yes"),
                     ),
                   ),
                 ],
@@ -678,7 +796,7 @@ class AuthController extends GetxController {
     );
   }
 
-  void showDialog_changePassword() {
+  void showDialog_changePassword({required String username}) {
     if (Get.isDialogOpen ?? false) Get.back();
 
     // Clear fields
@@ -823,7 +941,8 @@ class AuthController extends GetxController {
                             ),
                             elevation: 0,
                           ),
-                          onPressed: () => changePasswordCalled(),
+                          onPressed: () =>
+                              changePasswordCalled(username: username),
                           child: Text(
                             "Save",
                             style: GoogleFonts.poppins(
@@ -914,18 +1033,14 @@ class AuthController extends GetxController {
     );
   }
 
-  void changePasswordCalled() async {
+  Future<void> changePasswordCalled({required String username}) async {
     if (!validForm()) return;
 
     FocusManager.instance.primaryFocus?.unfocus();
 
     var projectName = selectedProject.value?.schemaName ?? '';
-    final lastData = StorageService.retrieveLastLoginData(projectName);
-
-    final savedUsername = lastData?["username"]?.toString() ?? "";
     var url = await AppConst.getFullARMUrl(ApiEndpoints.API_CHANGE_PASSWORD);
     var appName = projectName;
-    var username = savedUsername;
 
     var oldPasswordHash = generateMd5(oPassCtrl.text.trim());
     var newPassword = nPassCtrl.text.trim();
@@ -1195,7 +1310,8 @@ class AuthController extends GetxController {
   }
 
   Future<void> callVerifyOTP() async {
-    if (!validateOTPField()) return;
+    final attempt = _pendingOtpLogin;
+    if (attempt == null || isOtpLoading.value || !validateOTPField()) return;
 
     isOtpLoading.value = true;
     final result = await ApiManager.instance.validateLoginOTP(
@@ -1203,14 +1319,13 @@ class AuthController extends GetxController {
       otp: otpFieldController.text.trim(),
     );
     isOtpLoading.value = false;
+    if (!identical(_pendingOtpLogin, attempt)) return;
 
     switch (result) {
       case ApiSuccess(data: final response):
-        await processSignInDataResponse(
-          currentProjectName.value,
-          response,
-          isFromOtp: true,
-        );
+        _pendingOtpLogin = null;
+        otpFieldController.clear();
+        await _completeSignIn(attempt, response, isFromOtp: true);
         break;
       case ApiError(message: final errorMsg):
         otpErrorText.value = errorMsg;
