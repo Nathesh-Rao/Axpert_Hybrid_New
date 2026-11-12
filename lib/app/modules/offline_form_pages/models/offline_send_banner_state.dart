@@ -8,6 +8,10 @@ enum OfflineSendBannerPhase {
   processing,
   done,
   issues,
+  pending,
+  waiting,
+  idle,
+  confirmed,
 }
 
 class OfflineSendBannerState {
@@ -16,12 +20,14 @@ class OfflineSendBannerState {
     required this.title,
     required this.description,
     this.progress,
+    this.serverConfirmed = false,
   });
 
   final OfflineSendBannerPhase phase;
   final String title;
   final String description;
   final double? progress;
+  final bool serverConfirmed;
   bool get isBusy =>
       phase == OfflineSendBannerPhase.checkingSession ||
       phase == OfflineSendBannerPhase.checkingQueues ||

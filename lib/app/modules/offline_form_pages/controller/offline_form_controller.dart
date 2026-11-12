@@ -3201,7 +3201,7 @@ class OfflineFormController extends GetxController {
       isSendingPendingRecords.value = false;
       // This timer changes presentation only. Queued backend work continues.
       if (_deferredBatchBanner && _batchBannerUpdates.latest != null) {
-        showSendPendingBanner(_batchBannerUpdates.latest!);
+        _showBatchResult(_batchBannerUpdates.latest!);
         _deferredBatchBanner = false;
       } else if (sendPendingBanner.value != null) {
         showSendPendingBanner(sendPendingBanner.value!);
@@ -3275,6 +3275,7 @@ class OfflineFormController extends GetxController {
       // 7. Set sync-specific state without changing the form's isLoading.
       cachedSaveUpdateMessage.value = "Starting Process";
       isCachedSaveActive.value = true;
+      _dashboardServerConfirmed.value = false;
       // The old upload dialog cleared these presentation items in build().
       // Reset once here instead so repeated banner rebuilds never lose batches.
       cachedSaveQueItems.clear();
@@ -3409,7 +3410,8 @@ class OfflineFormController extends GetxController {
             ? 'Sending completed with issues'
             : 'Records sent for processing',
         description:
-            '$accepted batches queued${unsent > 0 ? ' · $unsent not sent' : ''} · View notifications',
+            '$accepted ${accepted == 1 ? 'batch' : 'batches'} queued'
+            '${unsent > 0 ? ' · $unsent not sent' : ' · Waiting for server confirmation'}',
       );
     } catch (e, st) {
       // 15. Log upload errors and inform the user.
@@ -3455,6 +3457,7 @@ class OfflineFormController extends GetxController {
   // background service. It never controls batching, retries or queue statuses.
   final isSendingPendingRecords = false.obs;
   final sendPendingBanner = Rxn<OfflineSendBannerState>();
+  final _dashboardServerConfirmed = false.obs;
   Timer? _sendBannerTimer;
   final _batchBannerUpdates = OfflineBatchBannerUpdates();
   bool _readingBatchBanner = false;
@@ -3484,16 +3487,20 @@ class OfflineFormController extends GetxController {
       if (snapshot.baseline && _batchBannerUpdates.scope != null) {
         _sendBannerTimer?.cancel();
         sendPendingBanner.value = null;
+        _dashboardServerConfirmed.value = false;
         _deferredBatchBanner = false;
       }
       final changed = _batchBannerUpdates.consume(snapshot);
       if (!changed) return;
+      _dashboardServerConfirmed.value = false;
+      if (!isSendingPendingRecords.value) await refreshPendingCount();
+      if (isClosed) return;
       // Never replace session validation/upload progress or release its lock
       // when a backend result arrives during a manual send.
       if (isSendingPendingRecords.value) {
         _deferredBatchBanner = true;
       } else if (_batchBannerUpdates.latest != null) {
-        showSendPendingBanner(_batchBannerUpdates.latest!);
+        _showBatchResult(_batchBannerUpdates.latest!);
       }
     } catch (e) {
       LogService.writeLog(
@@ -3502,6 +3509,14 @@ class OfflineFormController extends GetxController {
     } finally {
       _readingBatchBanner = false;
     }
+  }
+
+  void _showBatchResult(OfflineSendBannerState result) {
+    _dashboardServerConfirmed.value =
+        result.serverConfirmed &&
+        pendingCount.value == 0 &&
+        pendingQueuesCount.value == 0;
+    showSendPendingBanner(result);
   }
 
   bool get sendPendingRecordsDisabled =>
@@ -3518,6 +3533,50 @@ class OfflineFormController extends GetxController {
       message: cachedSaveUpdateMessage.value,
       totalBatches: totalExpectedBatches.value,
       items: cachedSaveQueItems.map((item) => item.value).toList(),
+    );
+  }
+
+  /// Persistent home panel. The existing transient banner and its timers still
+  /// decide how long to show upload progress and individual results.
+  OfflineSendBannerState get dashboardSendStatus {
+    final active = currentSendPendingBanner;
+    final pending = pendingCount.value;
+    final queued = pendingQueuesCount.value;
+    if (active != null && !active.serverConfirmed) return active;
+    if (sendPendingRecordsDisabled) {
+      return const OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.waiting,
+        title: 'Sync in progress',
+        description: 'You can keep using your offline forms',
+      );
+    }
+    if (pending > 0) {
+      return OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.pending,
+        title: '$pending ${pending == 1 ? 'record' : 'records'} pending',
+        description: queued > 0
+            ? 'Saved on this device · $queued batches awaiting confirmation'
+            : 'Saved on this device',
+      );
+    }
+    if (queued > 0) {
+      return OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.waiting,
+        title: 'Waiting for server confirmation',
+        description: '$queued ${queued == 1 ? 'batch' : 'batches'} queued',
+      );
+    }
+    if (_dashboardServerConfirmed.value) {
+      return const OfflineSendBannerState(
+        phase: OfflineSendBannerPhase.confirmed,
+        title: 'All records are up to date',
+        description: 'Server confirmation received',
+      );
+    }
+    return const OfflineSendBannerState(
+      phase: OfflineSendBannerPhase.idle,
+      title: 'No pending records',
+      description: 'Records you save offline will appear here',
     );
   }
 
