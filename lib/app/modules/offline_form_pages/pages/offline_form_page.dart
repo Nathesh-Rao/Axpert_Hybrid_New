@@ -40,15 +40,18 @@ class OfflineFormPage extends GetView<OfflineFormController> {
       canPop: false,
       child: Scaffold(
         backgroundColor: Colors.white,
-        bottomNavigationBar: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: WidgetLoginButton(
-            loading: false,
-            icon: Icon(Icons.donut_small_outlined),
-            label: controller.isCorrectingRecord ? 'Save Changes' : "Submit",
-            visible: true,
-            onPressed: controller.onFormSubmit,
-            color: AppColors.darkBlue,
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: WidgetLoginButton(
+              loading: false,
+              icon: Icon(Icons.donut_small_outlined),
+              label: controller.isCorrectingRecord ? 'Save Changes' : "Submit",
+              visible: true,
+              onPressed: controller.onFormSubmit,
+              color: AppColors.darkBlue,
+            ),
           ),
         ),
         appBar: AppBar(

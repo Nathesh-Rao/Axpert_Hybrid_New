@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import '../../../core/common.dart';
 import '../auto_sync/sync.dart';
 import '../controller/offline_form_controller.dart';
+import '../db/db.dart';
 import '../models/models.dart';
 import '../widgets/offline_send_status_banner.dart';
 
@@ -22,12 +23,31 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
   bool _listView = false;
   String _query = '';
 
+  static const _formAccentColors = <(Color, Color)>[
+    (Color(0xFF3045A7), Color(0xFFEDF1FF)),
+    (Color(0xFFB45309), Color(0xFFFFF1E2)),
+    (Color(0xFF7046B9), Color(0xFFF1EAFE)),
+    (Color(0xFF237A59), Color(0xFFE6F5ED)),
+    (Color(0xFF0F7490), Color(0xFFE4F5F9)),
+    (Color(0xFFB74468), Color(0xFFFFEAF0)),
+  ];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) controller.getAllPages();
+      if (mounted) {
+        controller.getAllPages();
+        _loadLastRefresh();
+      }
     });
+  }
+
+  Future<void> _loadLastRefresh() async {
+    final timestamp = await OfflineDbModule.getLastSyncedTimestamp();
+    if (mounted && timestamp != null && timestamp.isNotEmpty) {
+      OfflineBackgroundSyncService.instance.lastSyncedAt.value = timestamp;
+    }
   }
 
   @override
@@ -35,176 +55,121 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
     final theme = Theme.of(context);
     return Scaffold(
       drawer: _buildDrawer(context),
-
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF252B65),
-        foregroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        leading: Builder(
-          builder: (ctx) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                Scaffold.of(ctx).openDrawer();
-              },
-            );
-          },
-        ),
-        automaticallyImplyLeading: false,
-        title: Text(
-          "Offline Forms",
-          style: theme.textTheme.titleLarge?.copyWith(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-
-        actions: [
-          Obx(
-            () => IconButton(
-              tooltip: 'Offline notifications',
-              onPressed: controller.openOfflineNotifications,
-              icon: Badge(
-                backgroundColor: const Color(0xFFF3AB57),
-                textColor: const Color(0xFF20244C),
-                isLabelVisible: controller.unreadOfflineNotifications.value > 0,
-                label: Text(
-                  controller.unreadOfflineNotifications.value > 99
-                      ? '99+'
-                      : controller.unreadOfflineNotifications.value.toString(),
-                ),
-                child: const Icon(Icons.notifications_none_rounded),
-              ),
-              iconSize: 23,
-            ),
-          ),
-          IconButton(
-            onPressed: controller.openOfflinesettings,
-            tooltip: 'Offline settings',
-            icon: const Icon(Icons.tune_rounded),
-            iconSize: 23,
-          ),
-          IconButton(
-            tooltip: 'Close Offline Forms',
-            onPressed: Get.back,
-            icon: const Icon(CupertinoIcons.clear_circled_solid),
-            iconSize: 21,
-          ),
-        ],
-      ),
       //       floatingActionButton: FloatingActionButton(onPressed: () async{
       //           final String sessionId =
       //         await AppStorage().retrieveValue(AppStorage.SESSIONID) ?? "";
       //  await  OfflineDbModule.tempCallActivemessageData(queueId: "1783573212667",sessionId: sessionId);
       //       }),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Obx(
-            () => Visibility(
-              visible: OfflineBackgroundSyncService.instance.isSyncing.value,
-              child: Container(
-                margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppColors.baseBlue.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.baseBlue.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      spreadRadius: 0,
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Obx(
+              () => Visibility(
+                visible: OfflineBackgroundSyncService.instance.isSyncing.value,
+                child: Container(
+                  margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.baseBlue.withValues(alpha: 0.15),
+                      width: 1,
                     ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.baseBlue.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        spreadRadius: 0,
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.baseBlue.withValues(alpha: 0.08),
-                      ),
-                      child: Row(
-                        children: [
-                          // Leading Icon
-                          Container(
-                            padding: EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.baseBlue.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.cloud_sync_rounded,
-                              color: AppColors.baseBlue,
-                              size: 16,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-
-                          // Text Hierarchy
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "Background sync is active.",
-                                  style: GoogleFonts.poppins(
-                                    color: AppColors.baseBlue,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.baseBlue.withValues(alpha: 0.08),
+                        ),
+                        child: Row(
+                          children: [
+                            // Leading Icon
+                            Container(
+                              padding: EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.baseBlue.withValues(
+                                  alpha: 0.1,
                                 ),
-                                Text(
-                                  OfflineBackgroundSyncService
-                                      .instance
-                                      .statusMessage
-                                      .value,
-                                  style: GoogleFonts.poppins(
-                                    color: AppColors.baseBlue.withValues(
-                                      alpha: 0.7,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.cloud_sync_rounded,
+                                color: AppColors.baseBlue,
+                                size: 16,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+
+                            // Text Hierarchy
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    "Background sync is active.",
+                                    style: GoogleFonts.poppins(
+                                      color: AppColors.baseBlue,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
                                     ),
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 11,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                                  Text(
+                                    OfflineBackgroundSyncService
+                                        .instance
+                                        .statusMessage
+                                        .value,
+                                    style: GoogleFonts.poppins(
+                                      color: AppColors.baseBlue.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 11,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
 
-                          // Trailing Spinner
-                          SizedBox(width: 12),
-                          SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: AppColors.baseBlue,
-                              strokeCap: StrokeCap.round,
+                            // Trailing Spinner
+                            SizedBox(width: 12),
+                            SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: AppColors.baseBlue,
+                                strokeCap: StrokeCap.round,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          _datSourcefetchWidget(),
-        ],
+            _datSourcefetchWidget(),
+          ],
+        ),
       ),
       backgroundColor: theme.brightness == Brightness.dark
           ? theme.colorScheme.surface
@@ -249,7 +214,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 72),
               sliver: _buildForms(matches),
             ),
         ],
@@ -259,38 +224,136 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
 
   Widget _buildOverview(int formCount) {
     final theme = Theme.of(context);
+    final syncService = OfflineBackgroundSyncService.instance;
     return Stack(
       children: [
-        const Positioned.fill(
+        Positioned.fill(
           bottom: 44,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF252B65), Color(0xFF454FAB)],
-              ),
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0.9, -1.25),
-                  radius: 1.05,
-                  colors: [Color(0xFF977254), Color(0x00977254)],
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF252B65), Color(0xFF454FAB)],
+                    ),
+                  ),
                 ),
-              ),
+                Positioned(
+                  top: -120,
+                  right: -115,
+                  child: Container(
+                    width: 330,
+                    height: 330,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Color(0xFFE0A152),
+                          Color(0x88A98470),
+                          Color(0x005D67B9),
+                        ],
+                        stops: [0, 0.52, 1],
+                      ),
+                      border: Border.all(color: Color(0x33FFFFFF)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: -150,
+                  right: -145,
+                  child: Container(
+                    width: 390,
+                    height: 390,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Color(0x1FFFFFFF), width: 18),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: -110,
+                  right: -105,
+                  child: Container(
+                    width: 310,
+                    height: 310,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Color(0x1FFFFFFF)),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + 4,
+            16,
+            4,
+          ),
           child: Column(
             children: [
               Row(
                 children: [
+                  Builder(
+                    builder: (ctx) => IconButton(
+                      tooltip: 'Open offline menu',
+                      onPressed: () => Scaffold.of(ctx).openDrawer(),
+                      color: Colors.white,
+                      icon: const Icon(Icons.menu_rounded, size: 27),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Offline Forms',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Obx(
+                    () => IconButton(
+                      tooltip: 'Offline notifications',
+                      onPressed: controller.openOfflineNotifications,
+                      color: Colors.white,
+                      icon: Badge(
+                        backgroundColor: const Color(0xFFF3AB57),
+                        textColor: const Color(0xFF20244C),
+                        isLabelVisible:
+                            controller.unreadOfflineNotifications.value > 0,
+                        label: Text(
+                          controller.unreadOfflineNotifications.value > 99
+                              ? '99+'
+                              : controller.unreadOfflineNotifications.value
+                                    .toString(),
+                        ),
+                        child: const Icon(Icons.notifications_none_rounded),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: controller.openOfflinesettings,
+                    tooltip: 'Offline settings',
+                    color: Colors.white,
+                    icon: const Icon(Icons.tune_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
                   Container(
-                    width: 50,
-                    height: 50,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
                       color: const Color(0x29FFFFFF),
                       border: Border.all(color: const Color(0x55FFFFFF)),
@@ -313,8 +376,17 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 2),
+                        Obx(
+                          () => Text(
+                            _lastRefreshLabel(syncService.lastSyncedAt.value),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFFE1E5FF),
+                            ),
+                          ),
+                        ),
                         if (formCount > 0) ...[
-                          const SizedBox(height: 7),
+                          const SizedBox(height: 8),
                           DecoratedBox(
                             decoration: BoxDecoration(
                               color: const Color(0xFF365874),
@@ -325,12 +397,27 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
                                 horizontal: 10,
                                 vertical: 4,
                               ),
-                              child: Text(
-                                'Ready to work offline',
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: const Color(0xFFD6FFEA),
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF7ED69C),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Ready to work offline',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: const Color(0xFFD6FFEA),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -340,7 +427,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
               Obx(
                 () => OfflineSendStatusBanner(
                   state: controller.dashboardSendStatus,
@@ -353,6 +440,27 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
         ),
       ],
     );
+  }
+
+  String _lastRefreshLabel(String? timestamp) {
+    if (timestamp == null || timestamp.isEmpty) return 'Not refreshed yet';
+    try {
+      final refreshed = DateTime.parse(timestamp).toLocal();
+      final now = DateTime.now();
+      final day = DateTime(refreshed.year, refreshed.month, refreshed.day);
+      final today = DateTime(now.year, now.month, now.day);
+      final dateLabel = day == today
+          ? 'today'
+          : day == today.subtract(const Duration(days: 1))
+          ? 'yesterday'
+          : '${refreshed.month}/${refreshed.day}/${refreshed.year}';
+      final time = MaterialLocalizations.of(
+        context,
+      ).formatTimeOfDay(TimeOfDay.fromDateTime(refreshed));
+      return 'Last refreshed $dateLabel at $time';
+    } catch (_) {
+      return 'Last refreshed time unavailable';
+    }
   }
 
   Widget _buildFormControls() {
@@ -370,21 +478,31 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
                 ),
               ),
             ),
-            ToggleButtons(
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              borderRadius: BorderRadius.circular(12),
-              isSelected: [!_listView, _listView],
-              onPressed: (index) => setState(() => _listView = index == 1),
-              children: const [
-                Tooltip(
-                  message: 'Grid view',
-                  child: Icon(Icons.grid_view_rounded, size: 21),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF0FB),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _viewToggle(
+                      Icons.grid_view_rounded,
+                      'Grid view',
+                      !_listView,
+                      () => setState(() => _listView = false),
+                    ),
+                    _viewToggle(
+                      Icons.format_list_bulleted_rounded,
+                      'List view',
+                      _listView,
+                      () => setState(() => _listView = true),
+                    ),
+                  ],
                 ),
-                Tooltip(
-                  message: 'List view',
-                  child: Icon(Icons.format_list_bulleted_rounded, size: 21),
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -398,14 +516,54 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
             prefixIcon: const Icon(Icons.search_rounded),
             filled: true,
             fillColor: theme.colorScheme.surface,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
+              borderSide: const BorderSide(color: Color(0xFFDCE3F1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(
+                color: Color(0xFF5268C8),
+                width: 1.4,
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _viewToggle(
+    IconData icon,
+    String tooltip,
+    bool selected,
+    VoidCallback onPressed,
+  ) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: selected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(
+              icon,
+              size: 20,
+              color: selected
+                  ? const Color(0xFF3045A7)
+                  : const Color(0xFF63708D),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -430,7 +588,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
           itemCount: forms.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: 82 + 3 * scaledText,
+            mainAxisExtent: 82 + 1.2 * scaledText,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
           ),
@@ -444,22 +602,21 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
   Widget _formCard(OfflineFormPageModel page, {required bool compact}) {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
+    final (iconColor, iconBackground) = _formAccentFor(page.caption);
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(18),
-      side: BorderSide(color: theme.colorScheme.outlineVariant),
+      side: BorderSide(
+        color: dark ? const Color(0xFF343A50) : const Color(0xFFDCE3F1),
+      ),
     );
     final icon = Container(
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF283559) : const Color(0xFFEDF1FF),
+        color: dark ? iconBackground.withValues(alpha: 0.2) : iconBackground,
         borderRadius: BorderRadius.circular(13),
       ),
-      child: Icon(
-        Icons.description_outlined,
-        size: 22,
-        color: dark ? const Color(0xFFB8C9FF) : const Color(0xFF3045A7),
-      ),
+      child: Icon(Icons.description_outlined, size: 22, color: iconColor),
     );
     final caption = Text(
       page.caption,
@@ -474,7 +631,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
     );
     return Material(
       color: theme.colorScheme.surface,
-      elevation: 1,
+      elevation: 2,
       shadowColor: const Color(0x2614254B),
       shape: shape,
       clipBehavior: Clip.antiAlias,
@@ -508,6 +665,15 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
         ),
       ),
     );
+  }
+
+  (Color, Color) _formAccentFor(String title) {
+    final normalized = title.trim().toLowerCase();
+    var hash = normalized.length;
+    for (final codeUnit in normalized.codeUnits) {
+      hash = (hash * 31 + codeUnit) & 0x7fffffff;
+    }
+    return _formAccentColors[hash % _formAccentColors.length];
   }
 
   Widget _datSourcefetchWidget() {

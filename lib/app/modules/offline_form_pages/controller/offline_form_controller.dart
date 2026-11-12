@@ -1953,6 +1953,11 @@ class OfflineFormController extends GetxController {
       final completeSuccess =
           progressModel.failureCount.value == 0 && failedLookups == 0;
       final updatedFormCount = refreshReport?.updatedForms ?? pages.length;
+      if (transId == null) {
+        await OfflineDbModule.updateLastSyncedTimestamp();
+        OfflineBackgroundSyncService.instance.lastSyncedAt.value =
+            await OfflineDbModule.getLastSyncedTimestamp();
+      }
       await notice(
         'summary',
         completeSuccess ? 'refresh_success' : 'refresh_warning',

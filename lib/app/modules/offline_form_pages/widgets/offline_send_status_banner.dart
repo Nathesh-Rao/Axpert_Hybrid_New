@@ -93,7 +93,9 @@ class _OfflineSendStatusBannerState extends State<OfflineSendStatusBanner>
     };
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(20),
-      side: BorderSide(color: theme.colorScheme.outlineVariant),
+      side: BorderSide(
+        color: dark ? const Color(0xFF343A50) : const Color(0xFFDCE3F1),
+      ),
     );
     final action = state.phase == OfflineSendBannerPhase.pending
         ? FilledButton(

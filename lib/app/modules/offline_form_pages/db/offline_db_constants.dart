@@ -15,8 +15,9 @@ class OfflineDBConstants {
     Uri uri = Uri.parse(userEnteredUrl);
 
     String baseUrl = "${uri.scheme}://${uri.host}";
+    final projectName = Uri.encodeComponent(StorageService.projectName ?? '');
 
-    return "$baseUrl/MobileOfflineStruct/offline_pages.json";
+    return "$baseUrl/MobileOfflineStruct/$projectName/offline_pages.json";
   }
 
   static String OFFLINE_CONFIG_URL() {
@@ -27,8 +28,9 @@ class OfflineDBConstants {
     Uri uri = Uri.parse(userEnteredUrl);
 
     String baseUrl = "${uri.scheme}://${uri.host}";
+    final projectName = Uri.encodeComponent(StorageService.projectName ?? '');
 
-    return "$baseUrl/MobileOfflineStruct/offline_config.json";
+    return "$baseUrl/MobileOfflineStruct/$projectName/offline_config.json";
   }
 
   static String VERSION_INFO_URL() {
@@ -39,8 +41,9 @@ class OfflineDBConstants {
     Uri uri = Uri.parse(userEnteredUrl);
 
     String baseUrl = "${uri.scheme}://${uri.host}";
+    final projectName = Uri.encodeComponent(StorageService.projectName ?? '');
 
-    return "$baseUrl/MobileOfflineStruct/appVersionInfo.json";
+    return "$baseUrl/MobileOfflineStruct/$projectName/appVersionInfo.json";
   }
 
   static const String CREATE_QUERY = 'CREATE TABLE IF NOT EXISTS ';
