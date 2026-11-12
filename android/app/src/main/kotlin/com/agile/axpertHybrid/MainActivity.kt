@@ -1,4 +1,4 @@
-package com.agile.axperthybridnew
+package com.agile.axpertHybrid
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
