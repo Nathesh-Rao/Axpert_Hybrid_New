@@ -29,7 +29,7 @@ class ProjectDatabase {
   static Database? _db;
 
   static const _dbName = 'axpert.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 5;
   static const _table = 'projects';
 
   // ── Open / init ───────────────────────────────────────────────────
@@ -57,6 +57,7 @@ class ProjectDatabase {
       schema_name TEXT    NOT NULL,
       caption     TEXT    NOT NULL DEFAULT '',
       logourl     TEXT    NOT NULL DEFAULT '',
+      logo_data   BLOB,
       color       TEXT    NOT NULL DEFAULT '',
       created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )
@@ -84,6 +85,9 @@ class ProjectDatabase {
           await db.execute(
             "ALTER TABLE $_table ADD COLUMN color TEXT NOT NULL DEFAULT ''",
           );
+        }
+        if (oldVersion < 5 && !columnNames.contains('logo_data')) {
+          await db.execute('ALTER TABLE $_table ADD COLUMN logo_data BLOB');
         }
       },
     );

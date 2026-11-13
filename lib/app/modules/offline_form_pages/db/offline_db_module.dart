@@ -134,12 +134,79 @@ class OfflineDbModule {
 
     _db = await openDatabase(
       dbPath,
-      version: 13,
+      version: 14,
       onCreate: (db, _) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         const tag = "[OFFLINE_DB_UPGRADE_006]";
+
+        if (oldVersion < 14) {
+          final columns = await db.rawQuery(
+            'PRAGMA table_info(${OfflineDBConstants.TABLE_OFFLINE_USER})',
+          );
+          final hasOfflineAvailableColumn = columns.any(
+            (column) =>
+                column['name'] == OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE,
+          );
+          if (!hasOfflineAvailableColumn) {
+            await db.execute(
+              'ALTER TABLE ${OfflineDBConstants.TABLE_OFFLINE_USER} '
+              'ADD COLUMN ${OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE} '
+              'INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+
+          final offlineUsers = await db.query(
+            OfflineDBConstants.TABLE_OFFLINE_USER,
+            columns: [
+              OfflineDBConstants.COL_ID,
+              OfflineDBConstants.COL_USERNAME,
+              OfflineDBConstants.COL_PROJECT_NAME,
+              OfflineDBConstants.COL_PASSWORD_HASH,
+            ],
+          );
+          for (final user in offlineUsers) {
+            final username = user[OfflineDBConstants.COL_USERNAME] as String;
+            final projectName =
+                user[OfflineDBConstants.COL_PROJECT_NAME] as String;
+            final storedPassword =
+                user[OfflineDBConstants.COL_PASSWORD_HASH]?.toString() ?? '';
+            final innerPasswordHash = storedPassword.isEmpty
+                ? ''
+                : generateMd5(storedPassword);
+            if (storedPassword.isNotEmpty) {
+              await db.update(
+                OfflineDBConstants.TABLE_OFFLINE_USER,
+                {OfflineDBConstants.COL_PASSWORD_HASH: innerPasswordHash},
+                where: '${OfflineDBConstants.COL_ID} = ?',
+                whereArgs: [user[OfflineDBConstants.COL_ID]],
+              );
+            }
+
+            final cachedPages = await db.rawQuery(
+              'SELECT COUNT(*) AS page_count '
+              'FROM ${OfflineDBConstants.TABLE_OFFLINE_PAGES} '
+              'WHERE ${OfflineDBConstants.COL_USERNAME} = ? '
+              'AND ${OfflineDBConstants.COL_PROJECT_NAME} = ?',
+              [username, projectName],
+            );
+            final pageCount = Sqflite.firstIntValue(cachedPages) ?? 0;
+            await db.update(
+              OfflineDBConstants.TABLE_OFFLINE_USER,
+              {
+                OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE:
+                    pageCount > 0 && innerPasswordHash.isNotEmpty ? 1 : 0,
+              },
+              where: '${OfflineDBConstants.COL_ID} = ?',
+              whereArgs: [user[OfflineDBConstants.COL_ID]],
+            );
+          }
+          LogService.writeLog(
+            message:
+                '$tag[V14] Offline availability added and saved credentials migrated.',
+          );
+        }
 
         if (oldVersion < 13) {
           await OfflineNotificationStore.create(db);
@@ -441,13 +508,22 @@ class OfflineDbModule {
   static Future<void> handlePostLogin({
     required bool isInternetAvailable,
   }) async {
-    final scope = await _getLastOfflineUserScope();
-    if (scope == null) return;
+    var username = StorageService.userName;
+    var projectName = StorageService.projectName;
+    if (username == null ||
+        username.isEmpty ||
+        projectName == null ||
+        projectName.isEmpty) {
+      final scope = await _getLastOfflineUserScope();
+      if (scope == null) return;
+      username = scope['username'];
+      projectName = scope['projectName'];
+    }
 
     await _handlePostLoginInternal(
       isInternetAvailable: isInternetAvailable,
-      username: scope['username']!,
-      projectName: scope['projectName']!,
+      username: username!,
+      projectName: projectName!,
     );
   }
 
@@ -471,7 +547,19 @@ class OfflineDbModule {
     //   );
     // }
 
-    final pages = await fetchAndStoreOfflinePages();
+    final pages = await _fetchAndStoreOfflinePagesInternal(
+      username: username,
+      projectName: projectName,
+    );
+    final cachedPageCount = await _getOfflinePagesCountInternal(
+      username: username,
+      projectName: projectName,
+    );
+    await updateOfflineAvailability(
+      projectName: projectName,
+      username: username,
+      hasOfflineForms: cachedPageCount > 0,
+    );
     log("pages => ${pages.length}", name: "_handlePostLoginInternal");
     if (pages.isEmpty) {
       LogService.writeLog(message: "$tag[INFO] No offline pages received");
@@ -785,6 +873,16 @@ class OfflineDbModule {
 
         await batchInsert.commit(noResult: true);
       });
+      await updateOfflineAvailability(
+        projectName: projectName,
+        username: username,
+        hasOfflineForms:
+            await _getOfflinePagesCountInternal(
+              username: username,
+              projectName: projectName,
+            ) >
+            0,
+      );
       await logAudit(
         action: "FETCH_OFFLINE_FORMS",
         remarks: "Successfully downloaded and stored ${pages.length} forms",
@@ -1543,6 +1641,10 @@ class OfflineDbModule {
 
     final username = scope['username']!;
     final projectName = scope['projectName']!;
+    if (!await ensureValidSession()) {
+      progress?.isSessionError.value = true;
+      return "Session is invalid";
+    }
     log(
       "processpendingque scope Username $username",
       name: processPendingQueTag,
@@ -2953,7 +3055,20 @@ class OfflineDbModule {
         remarks:
             "Cache cleared for user $username. Previous pages removed: $deletedPages",
       );
-      final pages = await fetchAndStoreOfflinePages();
+      final pages = await _fetchAndStoreOfflinePagesInternal(
+        username: username,
+        projectName: projectName,
+      );
+      await updateOfflineAvailability(
+        projectName: projectName,
+        username: username,
+        hasOfflineForms:
+            await _getOfflinePagesCountInternal(
+              username: username,
+              projectName: projectName,
+            ) >
+            0,
+      );
       await logAudit(
         action: syncAction,
         isError: pages.isEmpty,
@@ -3019,6 +3134,12 @@ class OfflineDbModule {
       whereArgs: [username, projectName],
     );
 
+    await updateOfflineAvailability(
+      projectName: projectName,
+      username: username,
+      hasOfflineForms: false,
+    );
+
     await logAudit(
       action: "CLEAR_LOCAL_CACHE",
       remarks: "All offline forms and datasources cleared.",
@@ -3076,6 +3197,16 @@ class OfflineDbModule {
     );
 
     await fetchAndStoreOfflinePages();
+    await updateOfflineAvailability(
+      projectName: projectName,
+      username: username,
+      hasOfflineForms:
+          await _getOfflinePagesCountInternal(
+            username: username,
+            projectName: projectName,
+          ) >
+          0,
+    );
   }
 
   static Future<void> refetchOnlyDatasources({
@@ -3097,6 +3228,11 @@ class OfflineDbModule {
       OfflineDBConstants.TABLE_OFFLINE_PAGES,
       where: 'username = ? AND project_name = ?',
       whereArgs: [scope['username'], scope['projectName']],
+    );
+    await updateOfflineAvailability(
+      projectName: scope['projectName']!,
+      username: scope['username']!,
+      hasOfflineForms: false,
     );
   }
 
@@ -3165,6 +3301,11 @@ class OfflineDbModule {
       where: 'username = ? AND project_name = ?',
       whereArgs: [scope['username'], scope['projectName']],
     );
+    await updateOfflineAvailability(
+      projectName: scope['projectName']!,
+      username: scope['username']!,
+      hasOfflineForms: false,
+    );
   }
 
   static Future<void> clearOnlyDatasources() async {
@@ -3195,28 +3336,100 @@ class OfflineDbModule {
   static Future<bool> validateOfflineLogin({
     required String projectName,
     required String username,
-    required String passwordHash,
+    required String password,
   }) async {
+    final normalizedPassword = password.trim();
+    if (normalizedPassword.isEmpty) return false;
+    final enteredPasswordHash = generateMd5(normalizedPassword);
     final res = await _database.query(
       OfflineDBConstants.TABLE_OFFLINE_USER,
       where:
           '''
       ${OfflineDBConstants.COL_PROJECT_NAME} = ? AND
       ${OfflineDBConstants.COL_USERNAME} = ? AND
-      ${OfflineDBConstants.COL_PASSWORD_HASH} = ?
+      ${OfflineDBConstants.COL_PASSWORD_HASH} = ? AND
+      ${OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE} = 1
     ''',
-      whereArgs: [projectName, username, passwordHash],
+      whereArgs: [projectName, username, enteredPasswordHash],
       limit: 1,
     );
     await logAudit(
       action: "OFFLINE_LOGIN_VALIDATION",
-      response: res.toString(),
+      response: 'matched=${res.isNotEmpty}',
       isError: res.isEmpty,
       remarks: res.isNotEmpty ? "VALIDATED" : "NOT_VALIDATED",
     );
     return res.isNotEmpty;
   }
 
+  static Future<Map<String, dynamic>?> getOfflineUser({
+    required String projectName,
+    required String username,
+  }) async {
+    final rows = await _database.query(
+      OfflineDBConstants.TABLE_OFFLINE_USER,
+      where:
+          '${OfflineDBConstants.COL_PROJECT_NAME} = ? AND '
+          '${OfflineDBConstants.COL_USERNAME} = ?',
+      whereArgs: [projectName, username],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Map<String, dynamic>.from(rows.first);
+  }
+
+  static Future<Map<String, dynamic>?> getLatestOfflineUserForProject(
+    String projectName,
+  ) async {
+    final rows = await _database.query(
+      OfflineDBConstants.TABLE_OFFLINE_USER,
+      where: '${OfflineDBConstants.COL_PROJECT_NAME} = ?',
+      whereArgs: [projectName],
+      orderBy: '${OfflineDBConstants.COL_LAST_LOGIN_AT} DESC',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Map<String, dynamic>.from(rows.first);
+  }
+
+  static Future<void> updateOfflineAvailability({
+    required String projectName,
+    required String username,
+    required bool hasOfflineForms,
+  }) async {
+    final user = await getOfflineUser(
+      projectName: projectName,
+      username: username,
+    );
+    final passwordHash =
+        user?[OfflineDBConstants.COL_PASSWORD_HASH]?.toString() ?? '';
+    await _database.update(
+      OfflineDBConstants.TABLE_OFFLINE_USER,
+      {
+        OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE:
+            hasOfflineForms && passwordHash.isNotEmpty ? 1 : 0,
+      },
+      where:
+          '${OfflineDBConstants.COL_PROJECT_NAME} = ? AND '
+          '${OfflineDBConstants.COL_USERNAME} = ?',
+      whereArgs: [projectName, username],
+    );
+  }
+
+  static Future<void> markOfflineLogin({
+    required String projectName,
+    required String username,
+  }) async {
+    await _database.update(
+      OfflineDBConstants.TABLE_OFFLINE_USER,
+      {OfflineDBConstants.COL_LAST_LOGIN_AT: DateTime.now().toIso8601String()},
+      where:
+          '${OfflineDBConstants.COL_PROJECT_NAME} = ? AND '
+          '${OfflineDBConstants.COL_USERNAME} = ?',
+      whereArgs: [projectName, username],
+    );
+  }
+
+  /// [passwordHash] is the inner legacy server hash, MD5(password), never the
+  /// user's plain password. Background sign-in applies the seed hash to it.
   static Future<void> saveUser({
     required String projectName,
     required String username,
@@ -3226,10 +3439,11 @@ class OfflineDbModule {
     const tag = "[OFFLINE_USER_SAVE_002]";
     try {
       final result = loginResult['result'] ?? loginResult;
-      final data = {
+      final data = <String, dynamic>{
         OfflineDBConstants.COL_PROJECT_NAME: projectName,
         OfflineDBConstants.COL_USERNAME: username,
-        OfflineDBConstants.COL_PASSWORD_HASH: passwordHash,
+        if (passwordHash.isNotEmpty)
+          OfflineDBConstants.COL_PASSWORD_HASH: passwordHash,
         OfflineDBConstants.COL_DISPLAY_NAME:
             result['nickname']?.toString() ?? username,
         OfflineDBConstants.COL_SESSION_ID:
@@ -3256,7 +3470,10 @@ class OfflineDbModule {
           whereArgs: [projectName, username],
         );
       } else {
-        await _database.insert(OfflineDBConstants.TABLE_OFFLINE_USER, data);
+        await _database.insert(OfflineDBConstants.TABLE_OFFLINE_USER, {
+          ...data,
+          OfflineDBConstants.COL_PASSWORD_HASH: passwordHash,
+        });
       }
 
       LogService.writeLog(
@@ -9438,7 +9655,8 @@ class OfflineDbModule {
     return {
       'username': res.first[OfflineDBConstants.COL_USERNAME] as String,
       'projectName': res.first[OfflineDBConstants.COL_PROJECT_NAME] as String,
-      // NOTE: currently plaintext, despite the column name — required for relogin below.
+      // This is MD5(password), which is the input needed for the legacy
+      // server hash. Never store or return the original password here.
       'password':
           res.first[OfflineDBConstants.COL_PASSWORD_HASH] as String? ?? '',
     };
@@ -9519,7 +9737,7 @@ class OfflineDbModule {
         "appname": projectName,
         "username": username,
         "Seed": AppConst.SEED,
-        "password": generateMd5(AppConst.SEED + generateMd5(storedPassword)),
+        "password": generateMd5(AppConst.SEED + storedPassword),
         "Language": "English",
         "SessionId": getGUID(),
         "Globalvars": false,
@@ -9584,7 +9802,7 @@ class OfflineDbModule {
           );
           return false;
         }
-        StorageService.saveUserSession(
+        await StorageService.saveUserSession(
           token: result['token'].toString(),
           sessionId: result['ARMSessionId'].toString(),
           userName: username,

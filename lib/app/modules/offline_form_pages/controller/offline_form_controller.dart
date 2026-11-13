@@ -4,8 +4,6 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:axpert/app/data/const/app_const.dart';
-import 'package:axpert/app/data/services/api/api_endpoints.dart';
-import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -1952,7 +1950,7 @@ class OfflineFormController extends GetxController {
           uploadProgress.isCompletedWithError.value;
       final completeSuccess =
           progressModel.failureCount.value == 0 && failedLookups == 0;
-      final updatedFormCount = refreshReport?.updatedForms ?? pages.length;
+      final updatedFormCount = refreshReport.updatedForms ?? pages.length;
       if (transId == null) {
         await OfflineDbModule.updateLastSyncedTimestamp();
         OfflineBackgroundSyncService.instance.lastSyncedAt.value =
@@ -2854,30 +2852,7 @@ class OfflineFormController extends GetxController {
 
   Future<bool> validateSession() async {
     try {
-      final Map<String, dynamic> payload = {
-        "ARMSessionId": StorageService.sessionId ?? '',
-      };
-      var url = await AppConst.getFullARMUrl(ApiEndpoints.API_VALIDATE_SESSION);
-      log(payload.toString(), name: "validateSession");
-      log(url, name: "validateSession");
-
-      final dynamic res = await ApiManager.instance.postDsToServer(
-        strictAuth: false,
-        url: url,
-        body: jsonEncode(payload),
-        isBearer: true,
-        show_errorSnackbar: false,
-      );
-      await Future.delayed(Duration(seconds: 2));
-      bool isSuccess = false;
-      if (res != null && res.isNotEmpty) {
-        log(res.toString(), name: "validateSession");
-        final decoded = jsonDecode(res);
-        if (decoded is Map && decoded['result']['success'] == true) {
-          isSuccess = true;
-        }
-      }
-      return isSuccess;
+      return await OfflineDbModule.ensureValidSession();
     } catch (e) {
       return false;
     }
@@ -3752,8 +3727,8 @@ class OfflineFormController extends GetxController {
                     OfflineSettingTile(
                       icon: Icons.sync_rounded,
                       color: AppColors.primaryPurple,
-                      title: "Auto sync",
-                      subtitle: "Sync saved forms when internet is available",
+                      title: "Auto-sync Offline Records",
+                      subtitle: "Sync saved offline records",
                       value: OfflineDbModule.autoSync,
                       onChanged: (v) async {
                         await OfflineBackgroundSyncService.instance.setAutoSync(
@@ -3766,8 +3741,8 @@ class OfflineFormController extends GetxController {
                     OfflineSettingTile(
                       icon: Icons.download_for_offline_rounded,
                       color: AppColors.accentCyan2,
-                      title: "Auto sync masters",
-                      subtitle: "Sync data sources when internet is available",
+                      title: "Auto-sync Masters",
+                      subtitle: "Sync look-up data..",
                       value: OfflineDbModule.autoSyncMaster,
                       onChanged: (v) async {
                         await OfflineDbModule.toggleAutoSyncMaster();

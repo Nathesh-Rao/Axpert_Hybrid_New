@@ -72,6 +72,10 @@ class _OTPViewState extends State<OTPView> {
                                             .value
                                             ?.logourl ??
                                         '',
+                                    imageBytes: controller
+                                        .selectedProject
+                                        .value
+                                        ?.logoData,
                                     projectName:
                                         controller.currentProjectName.value,
                                     size: 72,

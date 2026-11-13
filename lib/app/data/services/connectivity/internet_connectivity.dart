@@ -30,6 +30,16 @@ class InternetConnectivity extends GetxController {
   Future<bool> get connectionStatus => check();
 
   void showError() {
+    // Login and offline form routes handle missing connectivity in their own
+    // flows; a global modal would block offline work.
+    if (const {
+      Routes.SPLASH,
+      Routes.LOGIN,
+      Routes.OFFLINE_LISTING_PAGE,
+      Routes.OFFLINE_FORM_PAGE,
+    }.contains(Get.currentRoute)) {
+      return;
+    }
     Get.defaultDialog(
       contentPadding: EdgeInsets.all(10),
       titlePadding: EdgeInsets.only(top: 20),

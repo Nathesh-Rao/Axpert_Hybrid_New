@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -19,12 +20,14 @@ class ProjectLogo extends StatefulWidget {
   const ProjectLogo({
     super.key,
     required this.url,
+    this.imageBytes,
     this.projectName = '',
     this.size = 84,
     this.darkPlate,
   });
 
   final String url;
+  final Uint8List? imageBytes;
   final String projectName;
   final double size;
 
@@ -54,6 +57,7 @@ class _ProjectLogoState extends State<ProjectLogo> {
   void didUpdateWidget(covariant ProjectLogo oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url ||
+        oldWidget.imageBytes != widget.imageBytes ||
         oldWidget.projectName != widget.projectName) {
       _load();
     }
@@ -81,13 +85,16 @@ class _ProjectLogoState extends State<ProjectLogo> {
     _light = false;
 
     final url = widget.url.trim();
-    if (url.isEmpty) {
+    final bytes = widget.imageBytes;
+    if ((bytes == null || bytes.isEmpty) && url.isEmpty) {
       _provider = null;
       _failed = true;
       return;
     }
 
-    final provider = NetworkImage(url);
+    final ImageProvider provider = bytes != null && bytes.isNotEmpty
+        ? MemoryImage(bytes)
+        : NetworkImage(url);
     _provider = provider;
     final stream = provider.resolve(ImageConfiguration.empty);
     final listener = ImageStreamListener(

@@ -78,6 +78,7 @@ class OfflineDBConstants {
   static const String COL_TRANS_ID = 'trans_id';
   static const String COL_IS_SYNCED = 'is_synced';
   static const String COL_LAST_SYNCED = 'last_synced';
+  static const String COL_IS_OFFLINE_AVAILABLE = 'is_offline_available';
   // ================= OFFLINE PAGES =================
 
   static const String COL_PAGE_JSON = 'page_json';
@@ -236,6 +237,7 @@ class OfflineDBConstants {
     $COL_RAW_JSON         TEXT,
     $COL_LAST_LOGIN_AT    TEXT,
     $COL_LAST_SYNCED      TEXT,
+    $COL_IS_OFFLINE_AVAILABLE INTEGER NOT NULL DEFAULT 0,
     UNIQUE($COL_PROJECT_NAME, $COL_USERNAME)
   )
 ''';

@@ -27,7 +27,9 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _submit() async {
     if (_busy || controller.selectedProject.value == null) return;
     if (!controller.validateForm()) return;
-    if (controller.isPWD_auth.value) {
+    if (controller.isOfflineLoginMode.value) {
+      await controller.completeOfflineLogin();
+    } else if (controller.isPWD_auth.value) {
       await controller.callSignInAPI();
     } else {
       await controller.startLoginProcess();
@@ -35,6 +37,7 @@ class _LoginViewState extends State<LoginView> {
   }
 
   void _resetUsername() {
+    controller.isOfflineLoginMode.value = false;
     controller.isPWD_auth.value = false;
     controller.isOTP_auth.value = false;
     controller.authType.value = AuthType.none;
@@ -110,6 +113,8 @@ class _LoginViewState extends State<LoginView> {
                                 url:
                                     controller.selectedProject.value?.logourl ??
                                     '',
+                                imageBytes:
+                                    controller.selectedProject.value?.logoData,
                                 projectName:
                                     controller.currentProjectName.value,
                               ),
@@ -204,6 +209,7 @@ class _LoginViewState extends State<LoginView> {
                                             children: [
                                               ProjectLogo(
                                                 url: p.logourl,
+                                                imageBytes: p.logoData,
                                                 projectName: p.schemaName,
                                                 size: 38,
                                               ),
@@ -488,7 +494,11 @@ class _LoginViewState extends State<LoginView> {
                                               ),
                                             ),
                                             Text(
-                                              'Enter your password to sign in',
+                                              controller
+                                                      .isOfflineLoginMode
+                                                      .value
+                                                  ? 'Enter your password to continue offline'
+                                                  : 'Enter your password to sign in',
                                               style: ConnectionStyle.text(
                                                 context,
                                                 12,
@@ -686,8 +696,12 @@ class _LoginViewState extends State<LoginView> {
                                                         .signInApiStatusMessage
                                                         .value
                                             : password
-                                            ? controller.authType.value ==
-                                                      AuthType.both
+                                            ? controller
+                                                      .isOfflineLoginMode
+                                                      .value
+                                                  ? 'Continue offline'
+                                                  : controller.authType.value ==
+                                                        AuthType.both
                                                   ? 'Get OTP'
                                                   : 'Sign in'
                                             : 'Continue',

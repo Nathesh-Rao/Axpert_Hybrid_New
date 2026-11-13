@@ -35,6 +35,7 @@ class StorageService {
   static const _keyBackgroundNotifications = 'background_notifications';
   static const _keyNotificationList = 'notification_list';
   static const _keyNotificationUnread = 'notification_unread';
+  static const _keyOfflineMode = 'offline_mode';
   static String? get token => _prefs.getString(_keyToken);
   static String? get sessionId => _prefs.getString(_keySessionId);
   static String? get userName => _prefs.getString(_keyUserName);
@@ -48,6 +49,7 @@ class StorageService {
   static bool? get autoSync => _prefs.getBool(_autoSync);
   static bool? get autoSyncMaster => _prefs.getBool(_autoSyncMaster);
   static bool get isFirstTime => _prefs.getBool(_keyIsFirstTime) ?? true;
+  static bool get isOfflineMode => _prefs.getBool(_keyOfflineMode) ?? false;
   static bool get isShowNotifyEnabled =>
       _prefs.getBool(_isShowNotifyEnabled) ?? true;
   static int? get batchSize => _prefs.getInt(_batchSize);
@@ -67,6 +69,8 @@ class StorageService {
 
   static Future<void> setFirstTimeDone() =>
       _prefs.setBool(_keyIsFirstTime, false);
+  static Future<void> setOfflineMode(bool value) =>
+      _prefs.setBool(_keyOfflineMode, value);
   static Future<void> setFCMID(String id) => _prefs.setString(_fcmid, id);
   static Future<void> setisShowNotify(bool v) =>
       _prefs.setBool(_isShowNotifyEnabled, v);

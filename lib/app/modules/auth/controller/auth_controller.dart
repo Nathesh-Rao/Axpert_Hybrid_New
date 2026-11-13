@@ -13,7 +13,9 @@ import 'package:axpert/app/data/enums/auth_enums.dart';
 import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
+import 'package:axpert/app/data/services/connectivity/internet_connectivity.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
+import 'package:axpert/app/data/services/project_logo_cache.dart';
 import 'package:axpert/app/db/project_database.dart';
 import 'package:axpert/app/modules/webview/controller/webview_controller.dart';
 import 'package:axpert/app/modules/webview/webview_view.dart';
@@ -22,6 +24,7 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../../offline_form_pages/db/db.dart';
 
@@ -58,6 +61,7 @@ class AuthController extends GetxController {
   var isOTP_auth = false.obs;
   var isPWD_auth = false.obs;
   var isSigninApiCalling = false.obs;
+  var isOfflineLoginMode = false.obs;
   var signInApiStatusMessage = ''.obs;
   var otpChars = '4'.obs;
   var otpExpiryTime = '2'.obs;
@@ -109,10 +113,23 @@ class AuthController extends GetxController {
     switch (result) {
       case DbSuccess(:final data):
         projects.assignAll(data);
+        unawaited(_refreshProjectLogoCache(data));
       case DbError(:final message):
         error(message);
     }
     // isLoadingProjects.value = false;
+  }
+
+  Future<void> _refreshProjectLogoCache(List<ProjectModel> values) async {
+    final refreshed = await Future.wait(values.map(ProjectLogoCache.refresh));
+    for (final updated in refreshed) {
+      if (updated.logoData == null) continue;
+      final index = projects.indexWhere((item) => item.id == updated.id);
+      if (index >= 0) projects[index] = updated;
+      if (selectedProject.value?.id == updated.id) {
+        selectedProject.value = updated;
+      }
+    }
   }
 
   Future<void> refreshCurrentProject() async {
@@ -134,20 +151,23 @@ class AuthController extends GetxController {
         : StorageService.connectionLoginKey(project);
     if (project != null) await _migrateConfirmedBiometricLogin(project);
     if (isClosed || refresh != _biometricCheck) return;
-    final userName = StorageService.getRememberedUser(connection);
-    _rememberedBiometricUser = userName;
-    if (userName != null) {
-      rememberMe.value = true;
-      userNameController.text = userName;
-      userPasswordController.text =
-          StorageService.getRememberedPassword(connection) ?? '';
-
-      await setWillAuthenticate();
-    } else {
-      rememberMe.value = false;
-      userNameController.text = '';
-      userPasswordController.text = '';
+    final rememberedUser = StorageService.getRememberedUser(connection);
+    var userName = rememberedUser;
+    if (userName == null && project != null) {
+      final offlineUser = await OfflineDbModule.getLatestOfflineUserForProject(
+        project.schemaName,
+      );
+      if (isClosed || refresh != _biometricCheck) return;
+      userName = offlineUser?[OfflineDBConstants.COL_USERNAME]?.toString();
     }
+    _rememberedBiometricUser = rememberedUser;
+    rememberMe.value = rememberedUser != null;
+    userNameController.text = userName ?? '';
+    userPasswordController.text = rememberedUser == null
+        ? ''
+        : StorageService.getRememberedPassword(connection) ?? '';
+
+    if (rememberedUser != null) await setWillAuthenticate();
   }
 
   Future<void> _migrateConfirmedBiometricLogin(ProjectModel project) async {
@@ -206,6 +226,7 @@ class AuthController extends GetxController {
     isBiometricLoading.value = false;
     isBiometricAvailable.value = false;
     willBio_userAuthenticate.value = false;
+    isOfflineLoginMode.value = false;
   }
 
   void biometricLoginInputEdited() {
@@ -272,6 +293,7 @@ class AuthController extends GetxController {
     }
     final login = _eligibleBiometricLogin(project);
     if (login == null) return;
+    if (!await _hasNetworkInterface()) return;
     final check = _biometricCheck;
     _biometricPromptOpen = true;
     try {
@@ -314,16 +336,20 @@ class AuthController extends GetxController {
   }
 
   Future<void> startLoginProcess() async {
-    authType.value = await getLoginUserDetailsAndAuthType();
+    if (isOfflineLoginMode.value) return;
+    if (!await _hasNetworkInterface()) {
+      await _beginOfflineLogin();
+      return;
+    }
+
+    final nextAuthType = await getLoginUserDetailsAndAuthType();
+    if (isOfflineLoginMode.value) return;
+    authType.value = nextAuthType;
 
     if (authType.value == AuthType.otpOnly || _isAuthFromBiometric) {
       await callSignInAPI();
     }
     log("isPWD_auth.value ${isPWD_auth.value}", name: "lkey");
-    log(
-      "userPasswordController.text ${userPasswordController.text}",
-      name: "lkey",
-    );
     log("remeberme ${rememberMe.value}", name: "lkey");
     if (isPWD_auth.value) {
       if (!rememberMe.value && !_isAuthFromBiometric) {
@@ -345,6 +371,128 @@ class AuthController extends GetxController {
       case AuthType.none:
         debugPrint("❌ No authentication required.");
         break;
+    }
+  }
+
+  Future<bool> _hasNetworkInterface() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      final connected = results.any(
+        (result) => result != ConnectivityResult.none,
+      );
+      if (Get.isRegistered<InternetConnectivity>()) {
+        Get.find<InternetConnectivity>().isConnected.value = connected;
+      }
+      return connected;
+    } catch (_) {
+      return Get.isRegistered<InternetConnectivity>() &&
+          Get.find<InternetConnectivity>().isConnected.value;
+    }
+  }
+
+  bool _isNetworkUnavailableMessage(String message) {
+    final normalized = message.toLowerCase();
+    return const [
+      'network error',
+      'request timed out',
+      'socketexception',
+      'failed host lookup',
+      'connection refused',
+      'connection reset',
+      'network is unreachable',
+      'no address associated with hostname',
+    ].any(normalized.contains);
+  }
+
+  Future<bool> _beginOfflineLogin() async {
+    final project = selectedProject.value;
+    final username = userNameController.text.trim();
+    errUserName.value = '';
+    errPassword.value = '';
+    if (project == null || username.isEmpty) return false;
+
+    isUserDataLoading.value = true;
+    Map<String, dynamic>? user;
+    try {
+      user = await OfflineDbModule.getOfflineUser(
+        projectName: project.schemaName,
+        username: username,
+      );
+    } finally {
+      isUserDataLoading.value = false;
+    }
+    final isAvailable =
+        (user?[OfflineDBConstants.COL_IS_OFFLINE_AVAILABLE] as num?)?.toInt() ==
+        1;
+    final passwordHash =
+        user?[OfflineDBConstants.COL_PASSWORD_HASH]?.toString() ?? '';
+    if (!isAvailable || passwordHash.isEmpty) {
+      isOfflineLoginMode.value = false;
+      isPWD_auth.value = false;
+      isOTP_auth.value = false;
+      authType.value = AuthType.none;
+      errUserName.value =
+          'You are not an offline user. Connect to the internet and sign in first.';
+      return false;
+    }
+
+    isOfflineLoginMode.value = true;
+    isPWD_auth.value = true;
+    isOTP_auth.value = false;
+    authType.value = AuthType.passwordOnly;
+    userPasswordController.clear();
+    FocusScope.of(Get.context!).requestFocus(passwordFocus);
+    return true;
+  }
+
+  Future<void> completeOfflineLogin() async {
+    if (!isOfflineLoginMode.value || isSigninApiCalling.value) return;
+    final project = selectedProject.value;
+    final username = userNameController.text.trim();
+    final password = userPasswordController.text;
+    if (project == null) return;
+    if (password.trim().isEmpty) {
+      errPassword.value = 'Password is required';
+      return;
+    }
+
+    isSigninApiCalling.value = true;
+    signInApiStatusMessage.value = 'Checking offline credentials...';
+    errPassword.value = '';
+    try {
+      final valid = await OfflineDbModule.validateOfflineLogin(
+        projectName: project.schemaName,
+        username: username,
+        password: password,
+      );
+      if (!valid) {
+        errPassword.value = 'Incorrect password';
+        return;
+      }
+
+      await OfflineDbModule.markOfflineLogin(
+        projectName: project.schemaName,
+        username: username,
+      );
+      await StorageService.cacheProjectDetails(
+        projectName: project.schemaName,
+        userName: username,
+        webUrl: project.url,
+        armUrl: project.armurl,
+      );
+      await StorageService.saveUserSession(
+        token: '',
+        sessionId: '',
+        userName: username,
+        nickName: username,
+        projectname: project.schemaName,
+      );
+      await StorageService.setOfflineMode(true);
+      userPasswordController.clear();
+      await Get.offAllNamed(Routes.OFFLINE_LISTING_PAGE);
+    } finally {
+      isSigninApiCalling.value = false;
+      signInApiStatusMessage.value = '';
     }
   }
 
@@ -405,6 +553,10 @@ class AuthController extends GetxController {
         return AuthType.none;
 
       case ApiError(message: final errorMsg):
+        if (_isNetworkUnavailableMessage(errorMsg)) {
+          await _beginOfflineLogin();
+          return AuthType.none;
+        }
         Get.snackbar(
           "Error",
           errorMsg, // Shows exactly what went wrong (network issue or backend message)
@@ -483,8 +635,6 @@ class AuthController extends GetxController {
       "ClearPreviousSession": clearPreviousSession,
       if (useOtp) "OtpAuth": "T",
     };
-    log(signInBody.toString(), name: "callSignInAPI body");
-
     final armBase = project.armurl.trim();
     final url = armBase.isEmpty
         ? ApiEndpoints.API_SIGNIN
@@ -501,12 +651,6 @@ class AuthController extends GetxController {
           if (response.message == "Login Successful.") {
             StorageService.saveUserRole(
               response.rawData["role"].toString().toLowerCase(),
-            );
-            await OfflineDbModule.saveUser(
-              projectName: project.schemaName,
-              username: username,
-              passwordHash: attempt.rememberedPassword.trim(),
-              loginResult: response.rawData,
             );
             await _completeSignIn(attempt, response.rawData);
           } else if (response.otpLoginKey != null) {
@@ -549,6 +693,10 @@ class AuthController extends GetxController {
       case ApiError(message: final errorMsg):
         // True network or parsing crashes
         if (Get.isDialogOpen ?? false) Get.back();
+        if (_isNetworkUnavailableMessage(errorMsg)) {
+          await _beginOfflineLogin();
+          break;
+        }
         Get.snackbar(
           "Error",
           errorMsg,
@@ -598,6 +746,7 @@ class AuthController extends GetxController {
       nickName: nickName,
       projectname: projectname,
     );
+    await StorageService.setOfflineMode(false);
 
     // If you still need to log the change password status:
     // final changePwd = json["ChangePassword"]?.toString() ?? "false";
@@ -605,6 +754,14 @@ class AuthController extends GetxController {
     // LogService.writeLog(
     //   message: "[-] LoginController\nScope:SignInResponse()\nSession saved for user: $userName"
     // );
+
+    final rawPassword = attempt.rememberedPassword.trim();
+    await OfflineDbModule.saveUser(
+      projectName: projectname,
+      username: userName,
+      passwordHash: rawPassword.isEmpty ? '' : generateMd5(rawPassword),
+      loginResult: json,
+    );
 
     // 2. Handle Remember Me state
     final connection = StorageService.connectionLoginKey(attempt.project);
@@ -832,6 +989,7 @@ class AuthController extends GetxController {
                   Obx(
                     () => ProjectLogo(
                       url: selectedProject.value?.logourl ?? '',
+                      imageBytes: selectedProject.value?.logoData,
                       projectName: currentProjectName.value,
                       size: 45,
                     ),

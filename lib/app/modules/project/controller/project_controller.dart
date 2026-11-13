@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
@@ -5,6 +6,7 @@ import 'package:axpert/app/data/models/qr_payload.dart';
 import 'package:axpert/app/data/services/api/api_endpoints.dart';
 import 'package:axpert/app/data/services/api/api_manger.dart';
 import 'package:axpert/app/data/services/storage/storage_service.dart';
+import 'package:axpert/app/data/services/project_logo_cache.dart';
 import 'package:axpert/app/db/project_database.dart';
 import 'package:axpert/app/data/models/project_model.dart';
 import 'package:axpert/app/data/enums/project_enums.dart';
@@ -65,10 +67,20 @@ class ProjectController extends GetxController
     switch (result) {
       case DbSuccess(:final data):
         projects.assignAll(data);
+        unawaited(_refreshProjectLogoCache(data));
       case DbError(:final message):
         _showErrorSnackbar(message);
     }
     isLoadingProjects.value = false;
+  }
+
+  Future<void> _refreshProjectLogoCache(List<ProjectModel> values) async {
+    final refreshed = await Future.wait(values.map(ProjectLogoCache.refresh));
+    for (final updated in refreshed) {
+      if (updated.logoData == null) continue;
+      final index = projects.indexWhere((item) => item.id == updated.id);
+      if (index >= 0) projects[index] = updated;
+    }
   }
 
   // ── QR detected callback (pass this to QrScannerWidget) ──────────
@@ -544,6 +556,7 @@ class ProjectController extends GetxController
 
       updateSavingInfoText('Fetching project details');
       final logoUrl = await getLogoUrl(webUrl: url, projectName: name);
+      final logoData = await ProjectLogoCache.download(logoUrl);
       final logoColor = logoUrl.isEmpty
           ? ''
           : await extractLogoColorHex(logoUrl);
@@ -551,6 +564,7 @@ class ProjectController extends GetxController
         id: existingProject?.id,
         color: logoColor,
         logourl: logoUrl,
+        logoData: logoData ?? existingProject?.logoData,
         url: url,
         armurl: arm,
         schemaName: name,
@@ -614,6 +628,7 @@ class ProjectController extends GetxController
           webUrl: data.webUrl,
           projectName: data.projectName,
         );
+        final logoData = await ProjectLogoCache.download(logoUrl);
         final logocolor = logoUrl.isNotEmpty
             ? await extractLogoColorHex(logoUrl)
             : '';
@@ -621,6 +636,7 @@ class ProjectController extends GetxController
           ProjectModel(
             color: logocolor,
             logourl: logoUrl,
+            logoData: logoData,
             url: data.webUrl,
             armurl: data.armUrl,
             schemaName: data.projectName,

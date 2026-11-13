@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class ProjectModel {
   final int? id;
   final String url;
@@ -6,6 +8,7 @@ class ProjectModel {
   final String caption;
   final String logourl;
   final String color;
+  final Uint8List? logoData;
 
   const ProjectModel({
     this.id,
@@ -15,6 +18,7 @@ class ProjectModel {
     this.caption = '',
     this.logourl = '',
     this.color = '',
+    this.logoData,
   });
 
   ProjectModel copyWith({
@@ -25,6 +29,7 @@ class ProjectModel {
     String? caption,
     String? logourl,
     String? color,
+    Uint8List? logoData,
   }) {
     return ProjectModel(
       id: id ?? this.id,
@@ -34,6 +39,7 @@ class ProjectModel {
       caption: caption ?? this.caption,
       logourl: logourl ?? this.logourl,
       color: color ?? this.color,
+      logoData: logoData ?? this.logoData,
     );
   }
 
@@ -45,6 +51,7 @@ class ProjectModel {
     'caption': caption.trim(),
     'logourl': logourl.trim(),
     'color': color.trim(),
+    'logo_data': logoData,
   };
 
   factory ProjectModel.fromMap(Map<String, dynamic> map) => ProjectModel(
@@ -55,6 +62,7 @@ class ProjectModel {
     caption: (map['caption'] as String?) ?? '',
     logourl: (map['logourl'] as String?) ?? '',
     color: (map['color'] as String?) ?? '',
+    logoData: map['logo_data'] as Uint8List?,
   );
 
   bool isDuplicateOf(ProjectModel other) {

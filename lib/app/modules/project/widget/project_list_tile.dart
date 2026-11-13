@@ -166,6 +166,7 @@ class ProjectListTile extends GetView<ProjectController> {
               ),
               leading: ProjectLogo(
                 url: project.logourl,
+                imageBytes: project.logoData,
                 projectName: project.schemaName,
                 size: 48.r,
               ),

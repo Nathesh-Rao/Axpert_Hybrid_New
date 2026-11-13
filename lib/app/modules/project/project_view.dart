@@ -322,6 +322,7 @@ class ProjectView extends GetView<ProjectController> {
                           onTap: () => controller.onProjectTileClick(p),
                           leading: ProjectLogo(
                             url: p.logourl,
+                            imageBytes: p.logoData,
                             projectName: p.schemaName,
                             size: 42,
                           ),

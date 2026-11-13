@@ -22,6 +22,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
   late final controller = Get.find<OfflineFormController>();
   bool _listView = false;
   String _query = '';
+  DateTime? _lastOfflineBackPress;
 
   static const _formAccentColors = <(Color, Color)>[
     (Color(0xFF3045A7), Color(0xFFEDF1FF)),
@@ -53,128 +54,161 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      drawer: _buildDrawer(context),
-      //       floatingActionButton: FloatingActionButton(onPressed: () async{
-      //           final String sessionId =
-      //         await AppStorage().retrieveValue(AppStorage.SESSIONID) ?? "";
-      //  await  OfflineDbModule.tempCallActivemessageData(queueId: "1783573212667",sessionId: sessionId);
-      //       }),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Obx(
-              () => Visibility(
-                visible: OfflineBackgroundSyncService.instance.isSyncing.value,
-                child: Container(
-                  margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.baseBlue.withValues(alpha: 0.15),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.baseBlue.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        spreadRadius: 0,
+    return PopScope(
+      canPop: !StorageService.isOfflineMode,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !StorageService.isOfflineMode) return;
+
+        final now = DateTime.now();
+        final lastPress = _lastOfflineBackPress;
+        if (lastPress != null &&
+            now.difference(lastPress) <= const Duration(seconds: 2)) {
+          Get.closeCurrentSnackbar();
+          await StorageService.setOfflineMode(false);
+          await StorageService.saveUserSession(
+            token: '',
+            sessionId: '',
+            userName: StorageService.userName ?? '',
+            nickName: StorageService.nickName ?? '',
+            projectname: StorageService.projectName ?? '',
+          );
+          Get.offAllNamed(Routes.LOGIN);
+          return;
+        }
+
+        _lastOfflineBackPress = now;
+        Get.rawSnackbar(
+          message: 'Press back again to exit',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 2),
+          margin: const EdgeInsets.all(16),
+          borderRadius: 12,
+        );
+      },
+      child: Scaffold(
+        drawer: _buildDrawer(context),
+        //       floatingActionButton: FloatingActionButton(onPressed: () async{
+        //           final String sessionId =
+        //         await AppStorage().retrieveValue(AppStorage.SESSIONID) ?? "";
+        //  await  OfflineDbModule.tempCallActivemessageData(queueId: "1783573212667",sessionId: sessionId);
+        //       }),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Obx(
+                () => Visibility(
+                  visible:
+                      OfflineBackgroundSyncService.instance.isSyncing.value,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.baseBlue.withValues(alpha: 0.15),
+                        width: 1,
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.baseBlue.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          spreadRadius: 0,
                         ),
-                        decoration: BoxDecoration(
-                          color: AppColors.baseBlue.withValues(alpha: 0.08),
-                        ),
-                        child: Row(
-                          children: [
-                            // Leading Icon
-                            Container(
-                              padding: EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.baseBlue.withValues(
-                                  alpha: 0.1,
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.baseBlue.withValues(alpha: 0.08),
+                          ),
+                          child: Row(
+                            children: [
+                              // Leading Icon
+                              Container(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.baseBlue.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  shape: BoxShape.circle,
                                 ),
-                                shape: BoxShape.circle,
+                                child: Icon(
+                                  Icons.cloud_sync_rounded,
+                                  color: AppColors.baseBlue,
+                                  size: 16,
+                                ),
                               ),
-                              child: Icon(
-                                Icons.cloud_sync_rounded,
-                                color: AppColors.baseBlue,
-                                size: 16,
-                              ),
-                            ),
-                            SizedBox(width: 12),
+                              SizedBox(width: 12),
 
-                            // Text Hierarchy
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    "Background sync is active.",
-                                    style: GoogleFonts.poppins(
-                                      color: AppColors.baseBlue,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  Text(
-                                    OfflineBackgroundSyncService
-                                        .instance
-                                        .statusMessage
-                                        .value,
-                                    style: GoogleFonts.poppins(
-                                      color: AppColors.baseBlue.withValues(
-                                        alpha: 0.7,
+                              // Text Hierarchy
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      "Background sync is active.",
+                                      style: GoogleFonts.poppins(
+                                        color: AppColors.baseBlue,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
                                       ),
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 11,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
+                                    Text(
+                                      OfflineBackgroundSyncService
+                                          .instance
+                                          .statusMessage
+                                          .value,
+                                      style: GoogleFonts.poppins(
+                                        color: AppColors.baseBlue.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 11,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
 
-                            // Trailing Spinner
-                            SizedBox(width: 12),
-                            SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: AppColors.baseBlue,
-                                strokeCap: StrokeCap.round,
+                              // Trailing Spinner
+                              SizedBox(width: 12),
+                              SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: AppColors.baseBlue,
+                                  strokeCap: StrokeCap.round,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            _datSourcefetchWidget(),
-          ],
+              _datSourcefetchWidget(),
+            ],
+          ),
         ),
+        backgroundColor: theme.brightness == Brightness.dark
+            ? theme.colorScheme.surface
+            : const Color(0xFFF3F5FB),
+        body: SafeArea(top: false, child: _buildDashboard()),
       ),
-      backgroundColor: theme.brightness == Brightness.dark
-          ? theme.colorScheme.surface
-          : const Color(0xFFF3F5FB),
-      body: SafeArea(top: false, child: _buildDashboard()),
     );
   }
 

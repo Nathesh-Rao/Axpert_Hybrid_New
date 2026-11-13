@@ -85,6 +85,7 @@ class _ForgetPasswordViewState extends State<ForgetPasswordView> {
                             final auth = Get.find<AuthController>();
                             return ProjectLogo(
                               url: auth.selectedProject.value?.logourl ?? '',
+                              imageBytes: auth.selectedProject.value?.logoData,
                               projectName: auth.currentProjectName.value,
                               size: 68,
                             );
