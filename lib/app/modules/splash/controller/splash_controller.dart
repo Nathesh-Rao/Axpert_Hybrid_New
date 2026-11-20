@@ -1,14 +1,20 @@
 import 'package:axpert/app/data/services/storage/storage_service.dart';
 import 'package:local_auth/local_auth.dart';
+import '../../../data/services/log/crash_reporting_service.dart';
 
 import '../../../core/common.dart';
 
 class SplashController extends GetxController {
-
-  
   void onSplashLoad() async {
-    await checkIfDeviceSupportBiometric();
-    await checkAndNavigate();
+    await CrashReportingService.startupStep(
+      'biometric_check',
+      checkIfDeviceSupportBiometric,
+    );
+    await CrashReportingService.startupStep(
+      'initial_navigation',
+      checkAndNavigate,
+    );
+    await CrashReportingService.startupComplete();
   }
 
   Future<void> checkIfDeviceSupportBiometric() async {

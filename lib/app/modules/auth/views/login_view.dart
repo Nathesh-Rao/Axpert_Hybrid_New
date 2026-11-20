@@ -3,6 +3,7 @@ import 'package:axpert/app/data/const/app_const.dart';
 import 'package:axpert/app/data/enums/auth_enums.dart';
 import 'package:axpert/app/widgets/connection_style.dart';
 import 'package:axpert/app/widgets/project_logo.dart';
+import 'package:axpert/app/widgets/support_id_button.dart';
 import '../controller/auth_controller.dart';
 import '../widget/auth_system_bars.dart';
 import '../widget/biometric_switcher.dart';
@@ -72,17 +73,23 @@ class _LoginViewState extends State<LoginView> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: FutureBuilder<String>(
                   future: _version,
-                  builder: (context, snapshot) => Text(
-                    snapshot.hasData
-                        ? 'v${snapshot.data} · Axpert ${AppConst.APP_RELEASE_DATE}'
-                        : 'Axpert',
-                    key: const ValueKey('login-version'),
-                    textAlign: TextAlign.center,
-                    style: ConnectionStyle.text(
-                      context,
-                      11,
-                      color: ConnectionStyle.muted(context),
-                    ),
+                  builder: (context, snapshot) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SupportIdButton(),
+                      Text(
+                        snapshot.hasData
+                            ? 'v${snapshot.data} · Axpert ${AppConst.APP_RELEASE_DATE}'
+                            : 'Axpert',
+                        key: const ValueKey('login-version'),
+                        textAlign: TextAlign.center,
+                        style: ConnectionStyle.text(
+                          context,
+                          11,
+                          color: ConnectionStyle.muted(context),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

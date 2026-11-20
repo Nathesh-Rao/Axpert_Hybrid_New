@@ -1,6 +1,7 @@
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'location_track_processor.dart';
+import '../log/crash_reporting_service.dart';
 
 @pragma('vm:entry-point')
 void startLocationCallback() {
@@ -9,7 +10,9 @@ void startLocationCallback() {
 
 class LocationTaskHandler extends TaskHandler {
   @override
-  Future<void> onStart(DateTime timestamp, dynamic starter) async {}
+  Future<void> onStart(DateTime timestamp, dynamic starter) async {
+    await CrashReportingService.initializeBackground();
+  }
 
   @override
   Future<void> onRepeatEvent(DateTime timestamp, [dynamic sendPort]) async {
@@ -20,7 +23,13 @@ class LocationTaskHandler extends TaskHandler {
         ),
       );
       await processTrackedIdentifiers(position);
-    } catch (_) {}
+    } catch (error, stack) {
+      await CrashReportingService.record(
+        error,
+        stack,
+        reason: 'location_tracking',
+      );
+    }
   }
 
   @override

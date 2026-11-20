@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../../../data/services/log/log_service.dart';
+import '../../../data/services/log/crash_reporting_service.dart';
 import '../../../data/services/storage/storage_service.dart';
 import '../db/db.dart';
 import 'sync_alert_notifier.dart';
@@ -56,6 +57,7 @@ class OfflineSyncTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    await CrashReportingService.initializeBackground();
     print('#### FG_SYNC_TASK onStart CALLED ####');
     // WidgetsFlutterBinding.ensureInitialized();
     FlutterForegroundTask.sendDataToMain({
@@ -87,6 +89,7 @@ class OfflineSyncTaskHandler extends TaskHandler {
 
       _startTimer();
     } catch (e, st) {
+      await CrashReportingService.record(e, st, reason: 'background_sync_start');
       log('$e Error occured. ${st.toString()}', name: _tag, stackTrace: st);
     }
   }
@@ -431,7 +434,8 @@ class OfflineSyncTaskHandler extends TaskHandler {
         SyncDataKeys.pendingCount: remaining,
         SyncDataKeys.lastSyncedAt: lastTs ?? '',
       });
-    } catch (e) {
+    } catch (e, stack) {
+      await CrashReportingService.record(e, stack, reason: 'background_sync_cycle');
       await LogService.writeLog(message: '$_tag Cycle FAILED: $e');
       _updateNotification(
         title: '🔴 Sync Error',

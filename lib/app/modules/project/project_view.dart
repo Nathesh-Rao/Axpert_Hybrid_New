@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../widgets/connection_style.dart';
 import '../../widgets/project_logo.dart';
+import '../../widgets/support_id_button.dart';
 import '../../data/enums/project_enums.dart';
 import 'controller/project_controller.dart';
 import 'widget/project_hero_qr_widget.dart';
@@ -33,14 +34,20 @@ class ProjectView extends GetView<ProjectController> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Text(
-              'Powered by Axpert',
-              textAlign: TextAlign.center,
-              style: ConnectionStyle.text(
-                context,
-                11,
-                color: ConnectionStyle.muted(context),
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SupportIdButton(),
+                Text(
+                  'Powered by Axpert',
+                  textAlign: TextAlign.center,
+                  style: ConnectionStyle.text(
+                    context,
+                    11,
+                    color: ConnectionStyle.muted(context),
+                  ),
+                ),
+              ],
             ),
           ),
         );

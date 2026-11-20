@@ -227,6 +227,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
       case "dd":
         final String dsKey = dataSource;
         return _dropdown(
+          context,
           label,
           controller.getDropdownCtrl(name),
           name,
@@ -344,6 +345,7 @@ class OfflineFormPage extends GetView<OfflineFormController> {
   }
 
   Widget _dropdown(
+    BuildContext context,
     String label,
     RxString value,
     String key,
@@ -397,7 +399,11 @@ class OfflineFormPage extends GetView<OfflineFormController> {
         final String targetRxState = finalUiValue ?? "";
         if (currentRxValue != targetRxState) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            value.value = targetRxState;
+            if (!context.mounted || value.value != currentRxValue) return;
+            controller.applyAutomaticFieldValue(
+              key,
+              () => value.value = targetRxState,
+            );
 
             if (targetRxState.isNotEmpty) controller.errors.remove(key);
           });
@@ -611,9 +617,10 @@ class OfflineFormPage extends GetView<OfflineFormController> {
     // Set default value once
     String defaultDtformat = 'dd/MM/yyyy h:mm:ss a';
     if (ctrl.text.isEmpty) {
-      ctrl.text = DateFormat(
+      final defaultValue = DateFormat(
         datetime_formate.isNotEmpty ? datetime_formate : defaultDtformat,
       ).format(DateTime.now());
+      controller.applyAutomaticFieldValue(key, () => ctrl.text = defaultValue);
     }
     return _RowWithField(
       label: label,

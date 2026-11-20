@@ -13,10 +13,12 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 dependencies {
   // Import the Firebase BoM
   implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+  implementation("com.google.firebase:firebase-crashlytics-ndk")
   coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
   // TODO: Add the dependencies for Firebase products you want to use
   // When using the BoM, don't specify versions in Firebase dependencies
@@ -46,6 +48,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["crashlyticsCollectionEnabled"] = "true"
     }
 
     signingConfigs {
@@ -58,6 +61,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["crashlyticsCollectionEnabled"] = "false"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
         }

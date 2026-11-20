@@ -87,6 +87,9 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
       },
       child: Scaffold(
         drawer: _buildDrawer(context),
+        // Keep the fixed controls in place when the search keyboard opens.
+        // The cards reserve space for the keyboard inside their scroll view.
+        resizeToAvoidBottomInset: false,
         //       floatingActionButton: FloatingActionButton(onPressed: () async{
         //           final String sessionId =
         //         await AppStorage().retrieveValue(AppStorage.SESSIONID) ?? "";
@@ -222,35 +225,43 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
           .toList();
       final loading = forms.isEmpty && controller.isLoading.value;
 
-      return CustomScrollView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        slivers: [
-          SliverToBoxAdapter(child: _buildOverview(forms.length)),
-          SliverPadding(
+      final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildOverview(forms.length),
+          Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            sliver: SliverToBoxAdapter(child: _buildFormControls()),
+            child: _buildFormControls(),
           ),
-          if (matches.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: loading
-                      ? const CircularProgressIndicator()
-                      : Text(
-                          forms.isEmpty
-                              ? 'No forms available offline'
-                              : 'No matching forms',
-                          textAlign: TextAlign.center,
-                        ),
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 72),
-              sliver: _buildForms(matches),
+          Expanded(
+            child: CustomScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              slivers: [
+                if (matches.isEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(
+                        child: loading
+                            ? const CircularProgressIndicator()
+                            : Text(
+                                forms.isEmpty
+                                    ? 'No forms available offline'
+                                    : 'No matching forms',
+                                textAlign: TextAlign.center,
+                              ),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 72 + keyboardInset),
+                    sliver: _buildForms(matches),
+                  ),
+              ],
             ),
+          ),
         ],
       );
     });
@@ -332,6 +343,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
             4,
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
@@ -443,13 +455,15 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
                                     ),
                                   ),
                                   const SizedBox(width: 6),
-                                  Text(
-                                    'Ready to work offline',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color: const Color(0xFFD6FFEA),
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                  Flexible(
+                                    child: Text(
+                                      'Ready to work offline',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: const Color(0xFFD6FFEA),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -622,7 +636,7 @@ class _OfflineListingPageState extends State<OfflineListingPage> {
           itemCount: forms.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: 82 + 1.2 * scaledText,
+            mainAxisExtent: 82 + 2.8 * scaledText,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
           ),

@@ -148,7 +148,10 @@ class _OfflineSendStatusBannerState extends State<OfflineSendStatusBanner>
           )
         : null;
     final statusIcon = Icon(icon, size: 21, color: accent);
-    final stackAction = MediaQuery.textScalerOf(context).scale(14) > 18;
+    final stackAction =
+        MediaQuery.textScalerOf(context).scale(14) > 18 ||
+        (state.phase == OfflineSendBannerPhase.pending &&
+            MediaQuery.sizeOf(context).width < 360);
     return Material(
       color: theme.colorScheme.surface,
       elevation: 4,

@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:axpert/app/core/utils/app_utility.dart';
-import 'package:axpert/app/data/services/notification/notification_service.dart';
+import 'app/data/services/log/crash_reporting_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -14,17 +15,53 @@ import 'app/db/project_database.dart';
 import 'app/modules/offline_form_pages/auto_sync/sync.dart';
 import 'app/modules/offline_form_pages/db/db.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await StorageService.init();
-  await AppUtility.init();
-  await ProjectDatabase.instance.init();
+void main() {
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      await _startApplication();
+    },
+    (error, stack) {
+      unawaited(
+        CrashReportingService.record(
+          error,
+          stack,
+          reason: 'uncaught_async_error',
+          fatal: true,
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _startApplication() async {
+  // Firebase and error reporting precede the operations we need to diagnose.
   await Firebase.initializeApp();
+  await CrashReportingService.initialize();
+  CrashReportingService.installErrorHandlers();
+  await CrashReportingService.startupStep('storage', StorageService.init);
+  await CrashReportingService.identifyInstallation();
+  await CrashReportingService.startupStep(
+    'device_information',
+    AppUtility.init,
+  );
+  await CrashReportingService.startupStep(
+    'project_database',
+    ProjectDatabase.instance.init,
+  );
+
   // FirebaseMessaging.onBackgroundMessage(
   //   NotificationService.backgroundFirebaseMessageHandler,
   // );
-  await LocationService.initForegroundTask();
-  await initializeNotification();
+  await CrashReportingService.startupStep(
+    'foreground_task_setup',
+    LocationService.initForegroundTask,
+  );
+  await CrashReportingService.startupStep(
+    'notification_setup',
+    initializeNotification,
+    watchDelay: false,
+  );
   // unawaited(initializeNotification());
 
   FirebaseMessaging.onMessage.listen(onMessageListener);
@@ -32,7 +69,10 @@ Future<void> main() async {
   FirebaseMessaging.onMessageOpenedApp.listen(onMessageOpenAppListener);
 
   if (Platform.isAndroid) {
-    await InAppWebViewController.setWebContentsDebuggingEnabled(true);
+    await CrashReportingService.startupStep(
+      'webview_setup',
+      () => InAppWebViewController.setWebContentsDebuggingEnabled(true),
+    );
   }
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -50,7 +90,10 @@ Future<void> main() async {
     ),
   );
   try {
-    await OfflineDbModule.init();
+    await CrashReportingService.startupStep(
+      'offline_database',
+      OfflineDbModule.init,
+    );
     // await OfflineBackgroundSyncService.instance.initWorkManager();
 
     OfflineBackgroundSyncService.initCommunicationPort();
@@ -59,6 +102,11 @@ Future<void> main() async {
       message: "[OFFLINE_DB_INIT_001][SUCCESS] Offline DB initialized",
     );
   } catch (e, st) {
+    await CrashReportingService.record(
+      e,
+      st,
+      reason: 'offline_database_initialization',
+    );
     LogService.writeLog(
       message: "[OFFLINE_DB_INIT_001][FAILED] Offline DB init failed => $e",
     );
@@ -86,6 +134,12 @@ class AxpertApp extends StatelessWidget {
 
         initialRoute: AppPages.initial,
         getPages: AppPages.routes,
+        routingCallback: (routing) {
+          final route = routing?.current;
+          if (route != null && route.isNotEmpty) {
+            unawaited(CrashReportingService.recordScreen(route));
+          }
+        },
 
         defaultTransition: Transition.fadeIn,
         transitionDuration: const Duration(milliseconds: 300),

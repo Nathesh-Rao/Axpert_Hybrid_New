@@ -20,6 +20,7 @@ import '../../models/firebase_message_model.dart';
 import '../api/api_manger.dart';
 import '../location/location_permission_gate.dart';
 import '../location/location_service.dart';
+import '../log/crash_reporting_service.dart';
 
 FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -83,8 +84,12 @@ Future<void> initializeNotification() async {
 
   String? fcmID;
   try {
-    fcmID = await messaging.getToken();
-  } catch (e) {
+    fcmID = await CrashReportingService.startupStep(
+      'notification_token',
+      () => messaging.getToken(),
+    );
+  } catch (e, stack) {
+    await CrashReportingService.record(e, stack, reason: 'notification_token');
     LogService.writeOnConsole(
       message: "initializeNotification()=> getToken() failed: $e",
     );
@@ -109,6 +114,21 @@ void onMessageListener(RemoteMessage message) {
 
 @pragma('vm:entry-point')
 Future<void> onBackgroundMessageListner(RemoteMessage message) async {
+  await CrashReportingService.initializeBackground();
+  try {
+    await _handleBackgroundMessage(message);
+  } catch (error, stack) {
+    await CrashReportingService.record(
+      error,
+      stack,
+      reason: 'background_message',
+      fatal: true,
+    );
+    rethrow;
+  }
+}
+
+Future<void> _handleBackgroundMessage(RemoteMessage message) async {
   await GetStorage.init();
   if (message.data.containsKey('axm_queueid')) {
     await StorageService.init();

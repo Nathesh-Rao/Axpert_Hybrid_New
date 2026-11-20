@@ -67,6 +67,8 @@ class OfflineFormController extends GetxController {
   String? _editingUsername, _editingProject;
   Map<String, dynamic>? _originalRecordPayload;
   final Map<String, String> _loadedFieldValues = {};
+  final Map<String, String> _initialFormValues = {};
+  bool _showingExitDialog = false;
   final correctionMessage = ''.obs;
   String? correctionField;
   bool get isCorrectingRecord => editingRecordId != null;
@@ -169,6 +171,7 @@ class OfflineFormController extends GetxController {
             textCtrls[field.fldName]?.text.trim() ??
             text.trim();
       }
+      _captureInitialFormValues();
       correctionMessage.value =
           record['response']?.toString().isNotEmpty == true
           ? record['response'].toString()
@@ -292,11 +295,56 @@ class OfflineFormController extends GetxController {
       scrollCtrl.jumpTo(0);
     }
 
+    _captureInitialFormValues();
     isFormPreparing.value = false;
     update();
   }
 
+  String _currentFormValue(String name) =>
+      dropdownCtrls[name]?.value ?? textCtrls[name]?.text ?? '';
+
+  void _captureInitialFormValues() {
+    _initialFormValues
+      ..clear()
+      ..addEntries(
+        page.fields.map(
+          (field) => MapEntry(
+            field.fldName,
+            _currentFormValue(field.fldName),
+          ),
+        ),
+      );
+  }
+
+  bool get _hasUnsavedFormChanges => _initialFormValues.entries.any(
+    (entry) => _currentFormValue(entry.key) != entry.value,
+  );
+
+  /// Defaults resolved by the field widgets are part of a clean entry.
+  /// After a user edit, dependent changes count alongside the edited field.
+  void applyAutomaticFieldValue(String name, VoidCallback apply) {
+    final wasClean = !_hasUnsavedFormChanges;
+    apply();
+    if (wasClean && _initialFormValues.containsKey(name)) {
+      _initialFormValues[name] = _currentFormValue(name);
+    }
+  }
+
   Future<void> onPopCalled() async {
+    if (_showingExitDialog) return;
+    if (!_hasUnsavedFormChanges) {
+      Get.back();
+      return;
+    }
+    _showingExitDialog = true;
+    try {
+      await _confirmFormExit();
+    } finally {
+      _showingExitDialog = false;
+    }
+  }
+
+  Future<void> _confirmFormExit() async {
     final bool confirm =
         await Get.dialog(
           AlertDialog(
@@ -761,6 +809,7 @@ class OfflineFormController extends GetxController {
       field.errorText = null;
       fieldMap[field.fldName] = field;
     }
+    _captureInitialFormValues();
     Get.toNamed(Routes.OFFLINE_FORM_PAGE);
   }
 
